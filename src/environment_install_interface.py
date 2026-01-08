@@ -25,6 +25,7 @@ from qfluentwidgets import (
     CheckBox, ToolButton, ProgressBar, TextEdit
 )
 import winreg
+from font_manager import FontManager
 
 
 class InstallThread(QThread):
@@ -391,12 +392,12 @@ class EnvironmentInstallInterface(QWidget):
 
         # 标题
         title = SubtitleLabel("开发环境配置")
-        title.setStyleSheet("color: #2D3748; font-size: 28px;")
+        title.setStyleSheet(f"color: #2D3748; font-size: {FontManager.get_font_size('large_title')}px;")
         layout.addWidget(title)
 
         # 说明文字
         desc = BodyLabel("配置 openEuler 开发所需的编译工具链、依赖库和开发工具")
-        desc.setStyleSheet("color: #5A6A7A; font-size: 15px;")
+        desc.setStyleSheet(f"color: #5A6A7A; font-size: {FontManager.get_font_size('body')}px;")
         layout.addWidget(desc)
 
         # 滚动区域
@@ -437,22 +438,21 @@ class EnvironmentInstallInterface(QWidget):
 
         # 日志区域
         log_label = StrongBodyLabel("安装日志")
-        log_label.setStyleSheet("font-size: 16px; color: #2D3748;")
+        log_label.setStyleSheet(f"font-size: {FontManager.get_font_size('title')}px; color: #2D3748;")
         content_layout.addWidget(log_label)
 
         self.log_text = TextEdit()
         self.log_text.setReadOnly(True)
         self.log_text.setFixedHeight(200)
-        self.log_text.setStyleSheet("""
-            TextEdit {
+        self.log_text.setStyleSheet(f"""
+            TextEdit {{
                 background-color: #1E1E1E;
                 color: #D4D4D4;
                 border: 1px solid #3E3E3E;
                 border-radius: 6px;
                 padding: 10px;
                 font-family: 'Consolas', 'Microsoft YaHei UI', monospace;
-                font-size: 13px;
-            }
+            }}
         """)
         content_layout.addWidget(self.log_text)
 
@@ -481,7 +481,7 @@ class EnvironmentInstallInterface(QWidget):
         layout.setContentsMargins(24, 18, 24, 18)
 
         title = StrongBodyLabel("安装目录")
-        title.setStyleSheet("font-size: 16px; color: #2D3748;")
+        title.setStyleSheet(f"font-size: {FontManager.get_font_size('title')}px; color: #2D3748;")
         layout.addWidget(title)
 
         # 目录选择行
@@ -494,7 +494,6 @@ class EnvironmentInstallInterface(QWidget):
         self.install_dir_edit.setFixedHeight(36)
         self.install_dir_edit.setStyleSheet("""
             LineEdit {
-                font-size: 14px;
                 border-radius: 6px;
             }
         """)
@@ -524,7 +523,7 @@ class EnvironmentInstallInterface(QWidget):
         layout.setSpacing(15)
 
         title = StrongBodyLabel("安装组件")
-        title.setStyleSheet("font-size: 16px; color: #2D3748;")
+        title.setStyleSheet(f"font-size: {FontManager.get_font_size('title')}px; color: #2D3748;")
         layout.addWidget(title)
 
         # 创建复选框网格 - 使用4行2列布局
@@ -549,7 +548,7 @@ class EnvironmentInstallInterface(QWidget):
         for key, name, filename, icon, row, col in options:
             checkbox = CheckBox(name)
             checkbox.setChecked(True)
-            checkbox.setStyleSheet("font-size: 14px; color: #2D3748;")
+            checkbox.setStyleSheet("color: #2D3748;")
             self.checkboxes[key] = (checkbox, filename)
 
             # 检查文件是否存在
@@ -559,7 +558,7 @@ class EnvironmentInstallInterface(QWidget):
                     checkbox.setChecked(False)
                     checkbox.setEnabled(False)
                     name_label = BodyLabel(f" ({filename} 未找到)")
-                    name_label.setStyleSheet("color: #D83B01; font-size: 12px;")
+                    name_label.setStyleSheet("color: #D83B01;")
 
                     row_widget = QWidget()
                     row_layout = QHBoxLayout(row_widget)
@@ -583,7 +582,7 @@ class EnvironmentInstallInterface(QWidget):
 
         vscode_checkbox = CheckBox('安装 VSCode')
         vscode_checkbox.setChecked(True)
-        vscode_checkbox.setStyleSheet("font-size: 14px; color: #2D3748;")
+        vscode_checkbox.setStyleSheet("color: #2D3748;")
 
         # 检查 VSCode 是否存在
         vscode_path = os.path.join(self.source_dir, "VSCode")
@@ -591,7 +590,7 @@ class EnvironmentInstallInterface(QWidget):
             vscode_checkbox.setChecked(False)
             vscode_checkbox.setEnabled(False)
             vscode_label = BodyLabel(" (VSCode 未找到)")
-            vscode_label.setStyleSheet("color: #D83B01; font-size: 12px;")
+            vscode_label.setStyleSheet("color: #D83B01;")
 
             vscode_row = QWidget()
             vscode_row_layout = QHBoxLayout(vscode_row)
@@ -609,7 +608,7 @@ class EnvironmentInstallInterface(QWidget):
         # VSCode 插件子选项
         self.vscode_ext_checkbox = CheckBox("安装 VSCode 插件")
         self.vscode_ext_checkbox.setChecked(True)
-        self.vscode_ext_checkbox.setStyleSheet("font-size: 13px; color: #5A6A7A;")
+        self.vscode_ext_checkbox.setStyleSheet("color: #5A6A7A;")
 
         # 检查 extensions 是否存在
         extensions_path = os.path.join(self.source_dir, "extensions")
@@ -617,7 +616,7 @@ class EnvironmentInstallInterface(QWidget):
             self.vscode_ext_checkbox.setChecked(False)
             self.vscode_ext_checkbox.setEnabled(False)
             ext_label = BodyLabel(" (extensions 未找到)")
-            ext_label.setStyleSheet("color: #D83B01; font-size: 12px;")
+            ext_label.setStyleSheet("color: #D83B01;")
 
             ext_row = QWidget()
             ext_row_layout = QHBoxLayout(ext_row)

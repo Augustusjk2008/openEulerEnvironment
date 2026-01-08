@@ -16,6 +16,7 @@ from qfluentwidgets import (
     FluentIcon as FIF, IconWidget, setTheme, Theme
 )
 from PyQt5.QtGui import QPalette, QColor
+from font_manager import FontManager
 
 class NavigationBar(QFrame):
     """顶部简洁导航栏"""
@@ -44,7 +45,7 @@ class NavigationBar(QFrame):
 
         # 程序名称
         self.app_name = SubtitleLabel("803所 RTopenEuler 系统管理工具")
-        self.app_name.setStyleSheet("color: #000000; font-size: 32px; font-weight: 600;")
+        self.app_name.setStyleSheet(f"color: #000000; font-size: {FontManager.get_font_size('large_title')}px; font-weight: 600;")
 
         left_layout.addWidget(self.logo_label)
         left_layout.addWidget(self.app_name)
@@ -57,7 +58,7 @@ class FunctionCard(CardWidget):
 
     def __init__(self, icon, title, description, button_text, color="#0078D4", parent=None):
         super().__init__(parent)
-        self.setFixedSize(320, 200)
+        self.setFixedSize(360, 240)
         self.setStyleSheet(f"""
             CardWidget {{
                 background-color: rgba(255, 255, 255, 0.9);
@@ -77,18 +78,17 @@ class FunctionCard(CardWidget):
         # 图标
         icon_widget = IconWidget(icon)
         icon_widget.setFixedSize(48, 48)
-        icon_widget.setStyleSheet(f"color: {color};")
         layout.addWidget(icon_widget, 0, Qt.AlignCenter)
 
         # 标题
         title_label = StrongBodyLabel(title)
-        title_label.setStyleSheet("font-size: 17px; font-weight: 600; color: #2D3748;")
+        title_label.setStyleSheet(f"font-size: {FontManager.get_font_size('subtitle')}px; font-weight: 600; color: #2D3748;")
         layout.addWidget(title_label)
 
         # 说明文字
         desc_label = BodyLabel(description)
         desc_label.setWordWrap(True)
-        desc_label.setStyleSheet("font-size: 14px; color: #5A6A7A;")
+        desc_label.setStyleSheet(f"font-size: {FontManager.get_font_size('body')}px; color: #5A6A7A;")
         desc_label.setMaximumHeight(55)
         layout.addWidget(desc_label)
 
@@ -101,7 +101,6 @@ class FunctionCard(CardWidget):
             TransparentPushButton {{
                 border: 1px solid {color};
                 border-radius: 6px;
-                font-size: 15px;
                 color: {color};
             }}
             TransparentPushButton:hover {{
@@ -120,16 +119,11 @@ class FunctionArea(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setFixedHeight(500)
+        self.setFixedHeight(600)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(30, 10, 30, 10)
         layout.setSpacing(20)
-
-        # 区域标题
-        title_label = SubtitleLabel("核心功能")
-        title_label.setStyleSheet("color: #2D3748;")
-        layout.addWidget(title_label)
 
         # 卡片网格布局
         grid_layout = QGridLayout()
@@ -149,7 +143,7 @@ class FunctionArea(QWidget):
         self.card2 = FunctionCard(
             icon=FIF.EDIT,
             title="自动代码生成",
-            description="根据功能需求，生成初始化模板、驱动代码、示例工程，减少重复开发",
+            description="生成初始化模板、示例工程，减少重复开发",
             button_text="选择代码生成",
             color="#107C10"
         )
@@ -185,7 +179,7 @@ class FunctionArea(QWidget):
         # 创建一个容器来居中显示
         container = QWidget()
         container.setLayout(grid_layout)
-        container.setMaximumWidth(700)
+        container.setMaximumWidth(780)
 
         container_layout = QHBoxLayout()
         container_layout.addStretch()
@@ -215,10 +209,10 @@ class AuxiliaryArea(QFrame):
 
         # 新手指引
         guide_title = StrongBodyLabel("新手指引")
-        guide_title.setStyleSheet("font-size: 16px; color: #2D3748;")
+        guide_title.setStyleSheet(f"font-size: {FontManager.get_font_size('title')}px; color: #2D3748;")
 
-        guide_text = BodyLabel("首次使用建议：先配置开发环境 → 生成示例代码 → 查看教程验证")
-        guide_text.setStyleSheet("font-size: 15px; color: #5A6A7A;")
+        guide_text = BodyLabel("首次使用建议：直接查看教程中的《00.本程序怎么使用》，然后按顺序执行即可。")
+        guide_text.setStyleSheet(f"font-size: {FontManager.get_font_size('body')}px; color: #5A6A7A;")
         guide_text.setWordWrap(True)
 
         layout.addWidget(guide_title)
@@ -244,7 +238,7 @@ class StatusBar(QFrame):
 
         # 左侧：版本信息
         version_label = CaptionLabel("v0.0.1 抢先版")
-        version_label.setStyleSheet("color: #7A8A9A; font-size: 14px;")
+        version_label.setStyleSheet(f"color: #7A8A9A; font-size: {FontManager.get_font_size('caption')}px;")
 
         layout.addWidget(version_label)
         layout.addStretch()
@@ -257,6 +251,7 @@ class HomeInterface(QWidget):
     switch_to_initializer = pyqtSignal()
     switch_to_environment = pyqtSignal()
     switch_to_codegen = pyqtSignal()
+    switch_to_tutorial = pyqtSignal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -367,5 +362,5 @@ class HomeInterface(QWidget):
         self.switch_to_initializer.emit()
 
     def _on_tutorial_clicked(self):
-        """教程与文档按钮点击事件"""
-        print("打开教程文档")
+        """教程与文档按钮点击事件 - 跳转到教程页面"""
+        self.switch_to_tutorial.emit()

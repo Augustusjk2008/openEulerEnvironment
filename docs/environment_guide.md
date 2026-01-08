@@ -49,7 +49,7 @@ pip install pyinstaller
 ### 执行打包
 在激活的环境下，运行以下命令打包程序：
 ```bash
-pyinstaller --noconsole --onefile hello_world.py
+pyinstaller --noconsole --onefile .\src\main_window.py --name=openEulerManage.exe
 ```
 **参数说明：**
 - `--noconsole`: 运行时不显示黑色命令行窗口（适用于 GUI 程序）。

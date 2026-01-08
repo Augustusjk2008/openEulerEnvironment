@@ -22,6 +22,8 @@ from qfluentwidgets import (
     FluentIcon as FIF, IconWidget, LineEdit, PushButton,
     ComboBox, TextEdit, InfoBar, InfoBarPosition
 )
+from config_manager import get_config_manager
+from font_manager import FontManager
 
 
 class CodeGenerateThread(QThread):
@@ -186,6 +188,7 @@ class CodeGenerationInterface(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setObjectName("codeGenerationInterface")
+        self.config_manager = get_config_manager()  # 添加配置管理器
         self.generate_thread = None
         self.recent_projects = self._load_recent_projects()
         self.program_dir = self._get_program_dir()
@@ -214,12 +217,12 @@ class CodeGenerationInterface(QWidget):
 
         # 标题
         title = SubtitleLabel("代码生成")
-        title.setStyleSheet("color: #2D3748; font-size: 28px;")
+        title.setStyleSheet(f"color: #2D3748; font-size: {FontManager.get_font_size('large_title')}px;")
         layout.addWidget(title)
 
         # 说明文字
         desc = BodyLabel("根据产品型号和工程类型自动生成项目代码和目录结构")
-        desc.setStyleSheet("color: #5A6A7A; font-size: 15px;")
+        desc.setStyleSheet(f"color: #5A6A7A; font-size: {FontManager.get_font_size('body')}px;")
         layout.addWidget(desc)
 
         # 滚动区域
@@ -245,22 +248,21 @@ class CodeGenerationInterface(QWidget):
 
         # 日志区域
         log_label = StrongBodyLabel("生成日志")
-        log_label.setStyleSheet("font-size: 16px; color: #2D3748;")
+        log_label.setStyleSheet(f"font-size: {FontManager.get_font_size('title')}px; color: #2D3748;")
         content_layout.addWidget(log_label)
 
         self.log_text = TextEdit()
         self.log_text.setReadOnly(True)
         self.log_text.setFixedHeight(200)
-        self.log_text.setStyleSheet("""
-            TextEdit {
+        self.log_text.setStyleSheet(f"""
+            TextEdit {{
                 background-color: #1E1E1E;
                 color: #D4D4D4;
                 border: 1px solid #3E3E3E;
                 border-radius: 6px;
                 padding: 10px;
                 font-family: 'Consolas', 'Microsoft YaHei UI', monospace;
-                font-size: 13px;
-            }
+            }}
         """)
         content_layout.addWidget(self.log_text)
 
@@ -294,7 +296,7 @@ class CodeGenerationInterface(QWidget):
         layout.setSpacing(15)
 
         title = StrongBodyLabel("工程配置")
-        title.setStyleSheet("font-size: 16px; color: #2D3748;")
+        title.setStyleSheet(f"font-size: {FontManager.get_font_size('title')}px; color: #2D3748;")
         layout.addWidget(title)
 
         # 配置网格 - 2行2列
@@ -304,29 +306,29 @@ class CodeGenerationInterface(QWidget):
 
         # 第0行：产品型号 | 工程类型
         model_label = BodyLabel("产品型号:")
-        model_label.setStyleSheet("font-size: 14px; color: #2D3748;")
+        model_label.setStyleSheet(f"font-size: {FontManager.get_font_size('body')}px; color: #2D3748;")
         grid.addWidget(model_label, 0, 0)
 
         self.model_combo = ComboBox()
         self.model_combo.addItems(["微弹"])
         self.model_combo.setFixedHeight(36)
-        self.model_combo.setStyleSheet("font-size: 14px;")
+        self.model_combo.setStyleSheet("")
         self.model_combo.currentTextChanged.connect(self._update_preview)
         grid.addWidget(self.model_combo, 0, 1)
 
         type_label = BodyLabel("工程类型:")
-        type_label.setStyleSheet("font-size: 14px; color: #2D3748;")
+        type_label.setStyleSheet(f"font-size: {FontManager.get_font_size('body')}px; color: #2D3748;")
         grid.addWidget(type_label, 0, 2)
 
         self.type_combo = ComboBox()
         # 动态加载工程类型
         self.type_combo.setFixedHeight(36)
-        self.type_combo.setStyleSheet("font-size: 14px;")
+        self.type_combo.setStyleSheet("")
         grid.addWidget(self.type_combo, 0, 3)
 
         # 第1行：输出目录 + 浏览按钮 + 生成代码按钮
         dir_label = BodyLabel("输出目录:")
-        dir_label.setStyleSheet("font-size: 14px; color: #2D3748;")
+        dir_label.setStyleSheet(f"font-size: {FontManager.get_font_size('body')}px; color: #2D3748;")
         grid.addWidget(dir_label, 1, 0)
 
         dir_layout = QHBoxLayout()
@@ -335,8 +337,9 @@ class CodeGenerationInterface(QWidget):
         self.dir_edit = LineEdit()
         self.dir_edit.setPlaceholderText("选择输出目录")
         self.dir_edit.setFixedHeight(36)
-        self.dir_edit.setText(r"C:\Projects")
-        self.dir_edit.setStyleSheet("font-size: 14px;")
+        # 从配置管理器读取默认输出目录
+        self.dir_edit.setText(self.config_manager.get("default_output_dir", r"C:\Projects"))
+        self.dir_edit.setStyleSheet("")
         dir_layout.addWidget(self.dir_edit)
 
         browse_btn = PushButton("浏览")
@@ -374,22 +377,21 @@ class CodeGenerationInterface(QWidget):
         layout.setSpacing(10)
 
         title = StrongBodyLabel("目录结构预览")
-        title.setStyleSheet("font-size: 16px; color: #2D3748;")
+        title.setStyleSheet(f"font-size: {FontManager.get_font_size('title')}px; color: #2D3748;")
         layout.addWidget(title)
 
         self.struct_preview = TextEdit()
         self.struct_preview.setReadOnly(True)
         self.struct_preview.setFixedHeight(200)
-        self.struct_preview.setStyleSheet("""
-            TextEdit {
+        self.struct_preview.setStyleSheet(f"""
+            TextEdit {{
                 background-color: #F5F5F5;
                 color: #2D3748;
                 border: 1px solid rgba(0, 0, 0, 0.1);
                 border-radius: 6px;
                 padding: 10px;
                 font-family: 'Consolas', monospace;
-                font-size: 12px;
-            }
+            }}
         """)
         self.struct_preview.setPlainText("请选择工程类型查看目录结构...")
         layout.addWidget(self.struct_preview)
@@ -412,7 +414,7 @@ class CodeGenerationInterface(QWidget):
         layout.setSpacing(10)
 
         title = StrongBodyLabel("最近生成的工程")
-        title.setStyleSheet("font-size: 16px; color: #2D3748;")
+        title.setStyleSheet(f"font-size: {FontManager.get_font_size('title')}px; color: #2D3748;")
         layout.addWidget(title)
 
         # 优先显示本次运行最后一次生成的工程
@@ -422,11 +424,11 @@ class CodeGenerationInterface(QWidget):
             info_layout.setSpacing(5)
 
             name_label = BodyLabel(f"工程名称: {self.last_generated_name or '未知'}")
-            name_label.setStyleSheet("font-size: 13px; color: #2D3748; font-weight: 600;")
+            name_label.setStyleSheet("color: #2D3748; font-weight: 600;")
             info_layout.addWidget(name_label)
 
             path_label = CaptionLabel(f"工程路径: {self.last_generated_path}")
-            path_label.setStyleSheet("font-size: 11px; color: #7A8A9A;")
+            path_label.setStyleSheet("color: #7A8A9A;")
             info_layout.addWidget(path_label)
 
             layout.addLayout(info_layout)
@@ -441,7 +443,7 @@ class CodeGenerationInterface(QWidget):
             layout.addLayout(button_layout)
         else:
             empty_label = BodyLabel("暂无最近生成的工程")
-            empty_label.setStyleSheet("font-size: 13px; color: #A0A0A0;")
+            empty_label.setStyleSheet("color: #A0A0A0;")
             layout.addWidget(empty_label)
 
         return card
@@ -751,7 +753,7 @@ class CodeGenerationInterface(QWidget):
         self.generate_thread = None
 
         self.generate_btn.setEnabled(True)
-        self.generate_btn.setText("生成代码")
+        self.generate_btn.setText("生成")
 
         if success:
             InfoBar.success("完成", message, duration=3000, parent=self.window())

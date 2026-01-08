@@ -35,3 +35,6 @@ references/
 
 # Logs
 *.log
+
+# Todo List
+Todo.md

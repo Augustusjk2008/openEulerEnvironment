@@ -5,8 +5,10 @@ import datetime
 import paramiko
 from PyQt5.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QFileDialog
 from PyQt5.QtCore import QThread, pyqtSignal, Qt
-from qfluentwidgets import (PushButton, TextEdit, TitleLabel, SubtitleLabel, 
+from qfluentwidgets import (PushButton, TextEdit, TitleLabel, SubtitleLabel,
                             StrongBodyLabel, CardWidget, CheckBox, InfoBar, InfoBarPosition)
+from config_manager import get_config_manager
+from font_manager import FontManager
 
 class FileUploadWorker(QThread):
     log_signal = pyqtSignal(str)
@@ -124,6 +126,7 @@ class InitializerInterface(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setObjectName("initializerInterface")
+        self.config_manager = get_config_manager()  # 添加配置管理器
         self.local_project_path = ""
         self.worker = None
         self.upload_worker = None
@@ -140,6 +143,9 @@ class InitializerInterface(QWidget):
         title_card = CardWidget(self)
         title_layout = QVBoxLayout(title_card)
         self.title_label = TitleLabel('CCU系统出厂初始化工具', title_card)
+        self.title_label.setStyleSheet(
+            f"font-size: {FontManager.get_font_size('large_title')}px; color: #2D3748;"
+        )
         self.status_label = SubtitleLabel('准备就绪', title_card)
         self.status_label.setTextColor("#2196F3", "#2196F3")
         title_layout.addWidget(self.title_label)
@@ -243,11 +249,11 @@ class InitializerInterface(QWidget):
             self.start_init_commands()
             
     def start_upload(self):
-        try:
-            from config import SSH_HOST, SSH_USERNAME, SSH_PASSWORD
-        except ImportError:
-            SSH_HOST, SSH_USERNAME, SSH_PASSWORD = "192.168.137.100", "root", "Shanghaith8"
-            
+        # 从配置管理器读取SSH参数
+        SSH_HOST = self.config_manager.get("ssh_host", "192.168.137.100")
+        SSH_USERNAME = self.config_manager.get("ssh_username", "root")
+        SSH_PASSWORD = self.config_manager.get("ssh_password", "Shanghaith8")
+
         # 注意：原代码中上传到 "/"，这里保持一致
         self.upload_worker = FileUploadWorker(SSH_HOST, SSH_USERNAME, SSH_PASSWORD, self.local_project_path, "/")
         self.upload_worker.log_signal.connect(self.log_message)
@@ -265,17 +271,17 @@ class InitializerInterface(QWidget):
             InfoBar.error("错误", f"上传失败: {message}", duration=3000, parent=self.window())
 
     def start_init_commands(self):
-        try:
-            from config import SSH_HOST, SSH_USERNAME, SSH_PASSWORD
-        except ImportError:
-            SSH_HOST, SSH_USERNAME, SSH_PASSWORD = "192.168.137.100", "root", "Shanghaith8"
-            
+        # 从配置管理器读取SSH参数
+        SSH_HOST = self.config_manager.get("ssh_host", "192.168.137.100")
+        SSH_USERNAME = self.config_manager.get("ssh_username", "root")
+        SSH_PASSWORD = self.config_manager.get("ssh_password", "Shanghaith8")
+
         # 定义完整初始化步骤，完全同步自 system_initializer.py
         commands = []
-        
+
         # 步骤0: root用户设置密码
-        commands.append(("为root用户设置密码", 
-            f"echo '{SSH_USERNAME}:{SSH_PASSWORD}' | chpasswd || echo '密码已为目标值，跳过'", 
+        commands.append(("为root用户设置密码",
+            f"echo '{SSH_USERNAME}:{SSH_PASSWORD}' | chpasswd || echo '密码已为目标值，跳过'",
             False))
         
         # 步骤1: 创建文件夹结构
