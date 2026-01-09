@@ -45,6 +45,19 @@ class ClickableLabel(QLabel):
         super().mousePressEvent(event)
 
 
+class ClickableFrame(QFrame):
+    """可点击的容器"""
+    clicked = pyqtSignal()
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setCursor(QCursor(Qt.PointingHandCursor))
+
+    def mousePressEvent(self, event):
+        self.clicked.emit()
+        super().mousePressEvent(event)
+
+
 class TutorialInterface(QWidget):
     """教程与文档界面"""
 
@@ -52,9 +65,11 @@ class TutorialInterface(QWidget):
         super().__init__(parent)
         self.setObjectName("tutorialInterface")
         self.program_dir = self._get_program_dir()
+        self._expanded_version_item = None
 
         self.init_ui()
         self._scan_documents()
+        self._scan_versions()
 
     def _get_program_dir(self):
         """获取程序所在目录"""
@@ -109,6 +124,10 @@ class TutorialInterface(QWidget):
         docs_layout.addWidget(self.docx_card, 1)
 
         content_layout.addWidget(docs_container)
+
+        # 版本信息卡片
+        self.version_card = self._create_versions_card()
+        content_layout.addWidget(self.version_card)
 
         # 帮助与反馈卡片
         self.help_card = self._create_help_card()
@@ -329,6 +348,57 @@ class TutorialInterface(QWidget):
 
         return card
 
+    def _create_versions_card(self):
+        """创建版本信息卡片"""
+        card = CardWidget()
+        card.setStyleSheet("""
+            CardWidget {
+                background-color: rgba(255, 255, 255, 0.9);
+                border-radius: 12px;
+                border: 1px solid rgba(0, 0, 0, 0.06);
+            }
+        """)
+
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(20, 18, 20, 18)
+        layout.setSpacing(12)
+
+        # 标题
+        title_layout = QHBoxLayout()
+        title_layout.setSpacing(10)
+
+        icon = IconWidget(FIF.SYNC)
+        icon.setFixedSize(28, 28)
+        title_layout.addWidget(icon)
+
+        title = StrongBodyLabel("版本信息")
+        title.setStyleSheet(f"font-size: {FontManager.get_font_size('subtitle')}px; color: #2D3748;")
+        title_layout.addWidget(title)
+
+        self.version_count_label = CaptionLabel("(0)")
+        self.version_count_label.setStyleSheet("color: #7A8A9A;")
+        title_layout.addWidget(self.version_count_label)
+
+        title_layout.addStretch()
+
+        refresh_versions_btn = PushButton("刷新")
+        refresh_versions_btn.setFixedHeight(28)
+        refresh_versions_btn.setFixedWidth(60)
+        refresh_versions_btn.clicked.connect(lambda: self._scan_versions(refresh=True))
+        title_layout.addWidget(refresh_versions_btn)
+
+        layout.addLayout(title_layout)
+
+        # 版本列表容器
+        self.version_list_widget = QWidget()
+        self.version_list_layout = QVBoxLayout(self.version_list_widget)
+        self.version_list_layout.setSpacing(10)
+        self.version_list_layout.setContentsMargins(0, 0, 0, 0)
+
+        layout.addWidget(self.version_list_widget)
+
+        return card
+
     def _create_help_card(self):
         """创建帮助与反馈卡片"""
         card = CardWidget()
@@ -446,6 +516,127 @@ class TutorialInterface(QWidget):
         if refresh:
             InfoBar.success("刷新完成", f"已更新文档列表：PDF {len(pdf_files)} 个，Word {len(docx_files)} 个",
                           duration=2000, parent=self.window())
+
+    def _scan_versions(self, refresh=False):
+        """扫描版本信息目录"""
+        self._clear_layout(self.version_list_layout)
+        self._expanded_version_item = None
+
+        versions_dir = self._get_versions_dir()
+        version_files = []
+        if os.path.exists(versions_dir):
+            for file in os.listdir(versions_dir):
+                if file.lower().endswith('.txt'):
+                    version_files.append(file)
+
+        version_files = sorted(version_files, key=self._version_sort_key, reverse=True)
+        self.version_count_label.setText(f"({len(version_files)})")
+
+        if version_files:
+            for version_file in version_files:
+                version = Path(version_file).stem
+                content = self._read_version_file(os.path.join(versions_dir, version_file))
+                item = self._create_version_item(version, content)
+                self.version_list_layout.addWidget(item)
+        else:
+            empty_label = BodyLabel("暂无版本信息")
+            empty_label.setStyleSheet("color: #A0A0A0; padding: 15px;")
+            empty_label.setAlignment(Qt.AlignCenter)
+            self.version_list_layout.addWidget(empty_label)
+
+        if refresh:
+            InfoBar.success("刷新完成", f"已更新版本信息：{len(version_files)} 个",
+                          duration=2000, parent=self.window())
+
+    def _get_versions_dir(self):
+        return os.path.join(self.program_dir, "versions")
+
+    def _version_sort_key(self, filename):
+        parts = []
+        for part in Path(filename).stem.split("."):
+            if part.isdigit():
+                parts.append((0, int(part)))
+            else:
+                parts.append((1, part))
+        return parts
+
+    def _read_version_file(self, filepath):
+        for encoding in ("utf-8", "gbk"):
+            try:
+                with open(filepath, "r", encoding=encoding, errors="replace") as file:
+                    return file.read().strip()
+            except OSError:
+                break
+        return ""
+
+    def _create_version_item(self, version, content):
+        item = QFrame()
+        item.setStyleSheet("""
+            QFrame {
+                background-color: rgba(248, 249, 251, 0.9);
+                border-radius: 8px;
+                border: 1px solid rgba(0, 0, 0, 0.06);
+            }
+        """)
+
+        layout = QVBoxLayout(item)
+        layout.setContentsMargins(14, 12, 14, 12)
+        layout.setSpacing(6)
+
+        header = ClickableFrame()
+        header.setStyleSheet("background-color: transparent;")
+        header_layout = QHBoxLayout(header)
+        header_layout.setContentsMargins(0, 0, 0, 0)
+        header_layout.setSpacing(8)
+
+        title = StrongBodyLabel(f"版本 {version}")
+        title.setStyleSheet(f"font-size: {FontManager.get_font_size('body')}px; color: #2D3748;")
+        title.setAttribute(Qt.WA_TransparentForMouseEvents)
+        header_layout.addWidget(title)
+
+        header_layout.addStretch()
+
+        arrow = QLabel(">")
+        arrow.setStyleSheet("color: #7A8A9A;")
+        arrow.setAttribute(Qt.WA_TransparentForMouseEvents)
+        header_layout.addWidget(arrow)
+
+        layout.addWidget(header)
+
+        content = content.strip()
+        if not content:
+            content = "暂无版本说明。"
+
+        content_label = BodyLabel(content)
+        content_label.setStyleSheet(f"color: #5A6A7A; font-size: {FontManager.get_font_size('body')}px;")
+        content_label.setWordWrap(True)
+        content_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        content_label.setVisible(False)
+        layout.addWidget(content_label)
+
+        item._is_expanded = False
+
+        def set_expanded(expanded):
+            item._is_expanded = expanded
+            content_label.setVisible(expanded)
+            arrow.setText("v" if expanded else ">")
+
+        item._set_expanded = set_expanded
+        header.clicked.connect(lambda: self._toggle_version_item(item))
+
+        return item
+
+    def _toggle_version_item(self, item):
+        if item._is_expanded:
+            item._set_expanded(False)
+            self._expanded_version_item = None
+            return
+
+        if self._expanded_version_item and self._expanded_version_item is not item:
+            self._expanded_version_item._set_expanded(False)
+
+        item._set_expanded(True)
+        self._expanded_version_item = item
 
     def _create_document_item(self, filename, filepath, file_type):
         """创建文档列表项（超链接样式）"""

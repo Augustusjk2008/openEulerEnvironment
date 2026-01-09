@@ -182,7 +182,8 @@ class CodeGenerationInterface(QWidget):
         'MB_DDF': 'MB_DDF示例工程',
         'Helm_Control': '舵机控制工程',
         'Auto_Pilot': '自动驾驶仪工程',
-        'Upgrade_And_Test': '监控和测试工程'
+        'Upgrade_And_Test': '监控和测试工程',
+        'No8RtBus': 'No8实时中间件工程'
     }
 
     def __init__(self, parent=None):
