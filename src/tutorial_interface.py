@@ -22,6 +22,7 @@ from qfluentwidgets import (
     InfoBar, InfoBarPosition
 )
 from font_manager import FontManager
+from config_manager import get_program_dir
 
 
 class ClickableLabel(QLabel):
@@ -73,10 +74,7 @@ class TutorialInterface(QWidget):
 
     def _get_program_dir(self):
         """获取程序所在目录"""
-        if getattr(sys, 'frozen', False):
-            return os.path.dirname(sys.executable)
-        else:
-            return os.path.dirname(os.path.abspath(__file__))
+        return get_program_dir()
 
     def init_ui(self):
         """初始化界面"""
@@ -536,7 +534,8 @@ class TutorialInterface(QWidget):
             for version_file in version_files:
                 version = Path(version_file).stem
                 content = self._read_version_file(os.path.join(versions_dir, version_file))
-                item = self._create_version_item(version, content)
+                release_date = self._extract_release_date(content)
+                item = self._create_version_item(version, content, release_date)
                 self.version_list_layout.addWidget(item)
         else:
             empty_label = BodyLabel("暂无版本信息")
@@ -569,7 +568,17 @@ class TutorialInterface(QWidget):
                 break
         return ""
 
-    def _create_version_item(self, version, content):
+    def _extract_release_date(self, content):
+        for line in content.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            if line.lower().startswith("release date:"):
+                return line.split(":", 1)[1].strip()
+            return ""
+        return ""
+
+    def _create_version_item(self, version, content, release_date):
         item = QFrame()
         item.setStyleSheet("""
             QFrame {
@@ -589,7 +598,11 @@ class TutorialInterface(QWidget):
         header_layout.setContentsMargins(0, 0, 0, 0)
         header_layout.setSpacing(8)
 
-        title = StrongBodyLabel(f"版本 {version}")
+        if release_date:
+            title_text = f"版本 {version} 发布日期：{release_date}"
+        else:
+            title_text = f"版本 {version}"
+        title = StrongBodyLabel(title_text)
         title.setStyleSheet(f"font-size: {FontManager.get_font_size('body')}px; color: #2D3748;")
         title.setAttribute(Qt.WA_TransparentForMouseEvents)
         header_layout.addWidget(title)

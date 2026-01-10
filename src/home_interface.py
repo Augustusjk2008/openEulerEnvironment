@@ -237,7 +237,7 @@ class StatusBar(QFrame):
         layout.setContentsMargins(30, 10, 30, 10)
 
         # 左侧：版本信息
-        version_label = CaptionLabel("v0.0.1 抢先版")
+        version_label = CaptionLabel("v0.0.3 抢先版")
         version_label.setStyleSheet(f"color: #7A8A9A; font-size: {FontManager.get_font_size('caption')}px;")
 
         layout.addWidget(version_label)

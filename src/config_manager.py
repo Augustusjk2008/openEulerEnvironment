@@ -5,7 +5,27 @@
 
 import json
 import os
-from pathlib import Path
+import sys
+
+_program_dir_override = None
+
+
+def set_program_dir_override(path):
+    """设置程序资源目录"""
+    global _program_dir_override
+    if path:
+        _program_dir_override = os.path.abspath(path)
+    else:
+        _program_dir_override = None
+
+
+def get_program_dir():
+    """获取程序所在目录（支持命令行覆盖）"""
+    if _program_dir_override:
+        return _program_dir_override
+    if getattr(sys, 'frozen', False):
+        return os.path.dirname(os.path.abspath(sys.executable))
+    return os.path.dirname(os.path.abspath(__file__))
 
 
 class ConfigManager:
@@ -39,12 +59,7 @@ class ConfigManager:
 
     def _get_config_file_path(self):
         """获取配置文件路径"""
-        if getattr(__import__('sys'), 'frozen', False):
-            # 打包后的程序
-            base_dir = os.path.dirname(os.path.abspath(__import__('sys').executable))
-        else:
-            # 开发模式
-            base_dir = os.path.dirname(os.path.abspath(__file__))
+        base_dir = get_program_dir()
 
         return os.path.join(base_dir, "settings.json")
 

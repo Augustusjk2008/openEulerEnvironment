@@ -36,6 +36,11 @@ conda activate pyqt5_env
 ```bash
 conda deactivate
 ```
+### 运行 PyQt5 程序
+在激活的环境下，运行以下命令启动 PyQt5 程序：
+```bash
+python src/main_window.py --dir H:\Resources\RTLinux\Environment
+```
 
 ## 4. 打包 Python 程序
 打包程序可以将 Python 脚本转换为独立的可执行文件（.exe），这样即使没有安装 Python 的电脑也能运行。

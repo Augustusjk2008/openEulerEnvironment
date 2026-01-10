@@ -4,13 +4,11 @@
 """
 
 import os
-import sys
 import json
 import zipfile
 import shutil
 import subprocess
 from datetime import datetime
-from pathlib import Path
 
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
@@ -26,6 +24,7 @@ from qfluentwidgets import (
 )
 import winreg
 from font_manager import FontManager
+from config_manager import get_program_dir
 
 
 class InstallThread(QThread):
@@ -376,13 +375,14 @@ class EnvironmentInstallInterface(QWidget):
         self.setObjectName("environmentInstallInterface")
         self.install_thread = None
 
-        # 获取程序所在目录
-        if getattr(sys, 'frozen', False):
-            self.source_dir = os.path.dirname(sys.executable)
-        else:
-            self.source_dir = os.path.dirname(os.path.abspath(__file__))
+        # 获取程序所在目录与模块目录
+        self.program_dir = get_program_dir()
+        self.source_dir = self._get_source_dir()
 
         self.init_ui()
+
+    def _get_source_dir(self):
+        return os.path.join(self.program_dir, "modules")
 
     def init_ui(self):
         """初始化界面"""

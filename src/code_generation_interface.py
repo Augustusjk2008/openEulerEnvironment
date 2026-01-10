@@ -4,7 +4,6 @@
 """
 
 import os
-import sys
 import json
 import zipfile
 from datetime import datetime
@@ -22,7 +21,7 @@ from qfluentwidgets import (
     FluentIcon as FIF, IconWidget, LineEdit, PushButton,
     ComboBox, TextEdit, InfoBar, InfoBarPosition
 )
-from config_manager import get_config_manager
+from config_manager import get_config_manager, get_program_dir
 from font_manager import FontManager
 
 
@@ -201,10 +200,7 @@ class CodeGenerationInterface(QWidget):
 
     def _get_program_dir(self):
         """获取程序所在目录"""
-        if getattr(sys, 'frozen', False):
-            return os.path.dirname(sys.executable)
-        else:
-            return os.path.dirname(os.path.abspath(__file__))
+        return get_program_dir()
 
     def _load_recent_projects(self):
         """加载最近生成的工程列表"""
@@ -477,7 +473,7 @@ class CodeGenerationInterface(QWidget):
 
         if os.path.exists(programs_dir):
             # 查找5个工程模板文件
-            for template_name in ['Hello_World', 'MB_DDF', 'Helm_Control', 'Auto_Pilot', 'Upgrade_And_Test']:
+            for template_name in ['Hello_World', 'MB_DDF', 'Helm_Control', 'Auto_Pilot', 'Upgrade_And_Test', 'No8RtBus']:
                 template_path = os.path.join(programs_dir, template_name)
                 if os.path.exists(template_path):
                     self.template_files[template_name] = template_path
@@ -504,19 +500,15 @@ class CodeGenerationInterface(QWidget):
         current_text = self.type_combo.currentText()
         current_data = self.type_combo.currentData()
 
-        print(f"调试: currentIndex={current_index}, currentText={current_text}, currentData={current_data}")
-
         # 如果 currentData() 返回 None，尝试用 itemData()
         if current_data is None and current_index >= 0:
             current_data = self.type_combo.itemData(current_index)
-            print(f"调试: 使用 itemData({current_index}) = {current_data}")
 
         # 如果还是 None，尝试通过文本反向查找
         if current_data is None:
             for template_name, display_name in self.PROJECT_TYPES.items():
                 if display_name == current_text and template_name in self.template_files:
                     current_data = template_name
-                    print(f"调试: 通过文本反向查找 = {current_data}")
                     break
 
         if not current_data:
@@ -672,29 +664,22 @@ class CodeGenerationInterface(QWidget):
         current_text = self.type_combo.currentText()
         current_data = self.type_combo.currentData()
 
-        self._log(f"调试: currentIndex={current_index}, currentText={current_text}, currentData={current_data}")
-
         # 如果 currentData() 返回 None，尝试用 itemData()
         if current_data is None and current_index >= 0:
             current_data = self.type_combo.itemData(current_index)
-            self._log(f"调试: 使用 itemData({current_index}) = {current_data}")
 
         # 如果还是 None，尝试通过文本反向查找
         if current_data is None:
             for template_name, display_name in self.PROJECT_TYPES.items():
                 if display_name == current_text and template_name in self.template_files:
                     current_data = template_name
-                    self._log(f"调试: 通过文本反向查找 = {current_data}")
                     break
-
-        self._log(f"调试: template_files = {list(self.template_files.keys())}")
 
         if not current_data or current_data not in self.template_files:
             InfoBar.warning("提示", "未找到可用工程模板", duration=2000, parent=self.window())
             return
 
         project_file = self.template_files.get(current_data)
-        self._log(f"调试: project_file = {project_file}")
 
         if not project_file or not os.path.exists(project_file):
             InfoBar.warning("提示", f"模板文件不存在: {project_file}", duration=2000, parent=self.window())

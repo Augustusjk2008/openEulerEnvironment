@@ -7,7 +7,7 @@ from PyQt5.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QFileDialog
 from PyQt5.QtCore import QThread, pyqtSignal, Qt
 from qfluentwidgets import (PushButton, TextEdit, TitleLabel, SubtitleLabel,
                             StrongBodyLabel, CardWidget, CheckBox, InfoBar, InfoBarPosition)
-from config_manager import get_config_manager
+from config_manager import get_config_manager, get_program_dir
 from font_manager import FontManager
 
 class FileUploadWorker(QThread):
@@ -198,12 +198,7 @@ class InitializerInterface(QWidget):
 
     def _get_program_dir(self):
         """获取程序所在目录"""
-        if getattr(sys, 'frozen', False):
-            # 打包模式
-            return os.path.dirname(sys.executable)
-        else:
-            # 开发模式
-            return os.path.dirname(os.path.abspath(__file__))
+        return get_program_dir()
 
     def _set_default_path(self):
         """自动设置默认的上传文件夹路径"""
@@ -232,7 +227,8 @@ class InitializerInterface(QWidget):
         
     def one_click_initialization(self):
         # 尝试自动定位 files_to_upload 目录 (参考原 system_initializer.py 逻辑)
-        local_path = os.path.join(os.getcwd(), "references", "openEulerReset", "files_to_upload")
+        program_dir = self._get_program_dir()
+        local_path = os.path.join(program_dir, "references", "openEulerReset", "files_to_upload")
         if os.path.exists(local_path) and not self.local_project_path:
             self.local_project_path = local_path
             self.path_display.setText(local_path)

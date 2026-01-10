@@ -1,9 +1,11 @@
+import argparse
+import os
 import sys
 from PyQt5.QtWidgets import QApplication
 from PyQt5.QtCore import QSize, Qt
 from PyQt5.QtGui import QIcon, QFont
 from qfluentwidgets import FluentWindow, NavigationItemPosition, FluentIcon, setTheme, Theme
-from config_manager import get_config_manager
+from config_manager import get_config_manager, set_program_dir_override
 from font_manager import FontManager
 
 # 导入自定义界面
@@ -13,6 +15,12 @@ from initializer_interface import InitializerInterface
 from environment_install_interface import EnvironmentInstallInterface
 from code_generation_interface import CodeGenerationInterface
 from tutorial_interface import TutorialInterface
+
+
+def _parse_args(argv):
+    parser = argparse.ArgumentParser(description="RTopenEuler 系统管理工具")
+    parser.add_argument("--dir", dest="program_dir", help="指定程序资源目录")
+    return parser.parse_known_args(argv)
 
 
 class MainWindow(FluentWindow):
@@ -88,7 +96,15 @@ class MainWindow(FluentWindow):
         self.switchTo(self.tutorialInterface)
 
 if __name__ == "__main__":
-    app = QApplication(sys.argv)
+    args, qt_args = _parse_args(sys.argv[1:])
+    if args.program_dir:
+        program_dir = os.path.abspath(args.program_dir)
+        if not os.path.isdir(program_dir):
+            print(f"指定目录不存在: {program_dir}")
+            sys.exit(1)
+        set_program_dir_override(program_dir)
+
+    app = QApplication([sys.argv[0]] + qt_args)
 
     # 在创建窗口之前，先加载配置并应用全局字体
     config_manager = get_config_manager()
