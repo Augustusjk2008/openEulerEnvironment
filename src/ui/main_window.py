@@ -6,7 +6,7 @@ from PyQt5.QtWidgets import QApplication
 from PyQt5.QtCore import QSize, Qt
 from PyQt5.QtGui import QIcon, QFont
 from qfluentwidgets import FluentWindow, NavigationItemPosition, FluentIcon
-from core.config_manager import get_config_manager, set_program_dir_override
+from core.config_manager import get_config_manager, set_program_dir_override, get_program_dir
 from core.font_manager import FontManager
 
 # 导入自定义界面
@@ -29,7 +29,8 @@ warnings.filterwarnings(
 
 def _parse_args(argv):
     parser = argparse.ArgumentParser(description="RTopenEuler 系统管理工具")
-    parser.add_argument("--dir", dest="program_dir", help="指定程序资源目录")
+    parser.add_argument("-d", "--dir", dest="program_dir", help="指定程序资源目录")
+    parser.add_argument("--skip-login", action="store_true", help="跳过登录界面直接进入主页")
     return parser.parse_known_args(argv)
 
 
@@ -62,6 +63,7 @@ class MainWindow(FluentWindow):
     def init_window(self):
         self.resize(1400, 1000)
         self.setWindowTitle('RTopenEuler 系统管理工具')
+        self.setWindowIcon(QIcon(os.path.join(get_program_dir(), "assets", "logo.png")))
 
         # 居中显示
         desktop = QApplication.desktop().availableGeometry()
@@ -93,6 +95,7 @@ class MainWindow(FluentWindow):
         self.homeInterface.switch_to_tutorial.connect(self._switch_to_tutorial_page)
         self.homeInterface.switch_to_terminal.connect(self._switch_to_terminal_page)
         self.homeInterface.switch_to_ftp.connect(self._switch_to_ftp_page)
+        self.homeInterface.switch_to_settings.connect(self._switch_to_settings_page)
 
     def _switch_to_environment_page(self):
         """切换到环境配置页面"""
@@ -118,5 +121,9 @@ class MainWindow(FluentWindow):
     def _switch_to_terminal_page(self):
         """切换到远程终端页面"""
         self.switchTo(self.terminalInterface)
+
+    def _switch_to_settings_page(self):
+        """切换到设置页面"""
+        self.switchTo(self.settingsInterface)
 
 

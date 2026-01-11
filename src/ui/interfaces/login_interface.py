@@ -4,7 +4,7 @@ Login/Register window shown before the main app.
 
 import os
 from PyQt5.QtCore import Qt, pyqtSignal
-from PyQt5.QtGui import QFont, QPixmap
+from PyQt5.QtGui import QFont, QPixmap, QIcon
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout, QStackedWidget,
     QLabel, QSizePolicy
@@ -27,6 +27,7 @@ class LoginWindow(QWidget):
         self.auth_manager = AuthManager()
         self.setWindowTitle("RTopenEuler 登录")
         self.setFixedSize(1120, 680)
+        self.setWindowIcon(QIcon(os.path.join(get_program_dir(), "assets", "logo.png")))
         self.setStyleSheet("""
             QWidget#loginWindow {
                 background: qlineargradient(

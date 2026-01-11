@@ -7,6 +7,7 @@ import locale
 import shutil
 import paramiko
 import pyte
+import codecs
 from wcwidth import wcwidth
 from PyQt5.QtCore import Qt, QProcess, QTimer, QObject, QThread, pyqtSignal, pyqtSlot
 from PyQt5.QtGui import QTextCursor, QKeySequence, QFont, QFontMetrics, QTextCharFormat, QColor
@@ -102,6 +103,7 @@ class TerminalTextEdit(TextEdit):
         self.setTabChangesFocus(False)
 
     def keyPressEvent(self, event):
+        # 1. 处理常规快捷键
         if event.matches(QKeySequence.Copy):
             if self.textCursor().hasSelection():
                 self.copy()
@@ -188,7 +190,10 @@ class TerminalInterface(QWidget):
         super().__init__(parent)
         self.setObjectName("terminalInterface")
         self.config_manager = get_config_manager()
-        self.encoding = locale.getpreferredencoding(False)
+        self.local_encoding = locale.getpreferredencoding(False)
+        self.remote_encoding = "utf-8"
+        self._decoder = codecs.getincrementaldecoder(self.remote_encoding)(errors='replace')
+        self._stderr_decoder = codecs.getincrementaldecoder(self.remote_encoding)(errors='replace')
         self.ssh_client = None
         self.ssh_channel = None
         self.key_fix_process = QProcess(self)
@@ -565,7 +570,12 @@ class TerminalInterface(QWidget):
         if self.ssh_channel is None or self.ssh_channel.closed:
             return
         try:
-            self.ssh_channel.send(text)
+            # 统一使用 utf-8 发送
+            if isinstance(text, str):
+                data = text.encode(self.remote_encoding)
+            else:
+                data = text
+            self.ssh_channel.send(data)
         except Exception:
             return
 
@@ -584,12 +594,12 @@ class TerminalInterface(QWidget):
             if self.ssh_channel.recv_ready():
                 data = self.ssh_channel.recv(4096)
                 if data:
-                    text = data.decode(self.encoding, errors="ignore")
+                    text = self._decoder.decode(data)
                     self._append_output(text)
             if self.ssh_channel.recv_stderr_ready():
                 data = self.ssh_channel.recv_stderr(4096)
                 if data:
-                    text = data.decode(self.encoding, errors="ignore")
+                    text = self._stderr_decoder.decode(data)
                     self._append_output(text)
         except Exception as exc:
             self._append_output(f"\r\n[连接异常] {exc}\r\n")
@@ -655,6 +665,9 @@ class TerminalInterface(QWidget):
 
         self.ssh_client = client
         self.ssh_channel = channel
+        # 重置解码器状态
+        self._decoder.reset()
+        self._stderr_decoder.reset()
         self._poll_timer.start()
         self.status_label.setText("SSH 已连接")
         self.status_label.setStyleSheet(f"color: #107C10; font-size: {FontManager.get_font_size('caption')}px;")
@@ -691,7 +704,7 @@ class TerminalInterface(QWidget):
         data = self.key_fix_process.readAllStandardOutput()
         if not data:
             return
-        text = bytes(data).decode(self.encoding, errors="ignore")
+        text = bytes(data).decode(self.local_encoding, errors="replace")
         self._append_output(text)
 
     def _on_key_fix_finished(self):

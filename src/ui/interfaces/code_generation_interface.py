@@ -6,6 +6,7 @@
 import os
 import json
 import zipfile
+import subprocess
 from datetime import datetime
 from pathlib import Path
 
@@ -52,16 +53,34 @@ class CodeGenerateThread(QThread):
             self.log_signal.emit(f"工程模板: {os.path.basename(project_file)}")
 
             # 步骤1: 确保输出目录存在
-            self.log_signal.emit(f"\n[1/1] 解压工程模板到: {output_dir}")
             os.makedirs(output_dir, exist_ok=True)
 
-            # 步骤2: 直接解压到输出目录
+            # 步骤2: 识别 ZIP 中的根目录
+            root_dir = ""
+            with zipfile.ZipFile(project_file, 'r') as zip_ref:
+                # 获取所有顶层目录/文件
+                top_level_items = set()
+                for name in zip_ref.namelist():
+                    parts = name.split('/')
+                    if parts[0]:
+                        top_level_items.add(parts[0])
+                
+                # 如果只有一个顶层项目且它是目录，则认为它是项目根目录
+                if len(top_level_items) == 1:
+                    root_dir = list(top_level_items)[0]
+            
+            # 步骤3: 解压到输出目录
+            self.log_signal.emit(f"\n[1/1] 解压工程模板到: {output_dir}")
             self._extract_zip(project_file, output_dir)
             self.progress_signal.emit(1, 1)
 
+            # 确定最终的项目路径
+            final_project_path = os.path.join(output_dir, root_dir) if root_dir else output_dir
+            final_project_path = os.path.normpath(final_project_path)
+
             self.log_signal.emit(f"\n✅ 代码生成完成！")
-            self.log_signal.emit(f"工程路径: {output_dir}")
-            self.finished_signal.emit(True, "代码生成成功！", output_dir)
+            self.log_signal.emit(f"工程路径: {final_project_path}")
+            self.finished_signal.emit(True, "代码生成成功！", final_project_path)
 
         except Exception as e:
             self.log_signal.emit(f"\n❌ 生成失败: {str(e)}")
@@ -430,13 +449,24 @@ class CodeGenerationInterface(QWidget):
 
             layout.addLayout(info_layout)
 
-            # 打开按钮
+            # 按钮栏
             button_layout = QHBoxLayout()
             button_layout.addStretch()
+            
+            # 用 IDE 打开按钮
+            ide_btn = TransparentPushButton("用IDE打开")
+            ide_btn.setFixedHeight(28)
+            ide_btn.clicked.connect(lambda checked, p=self.last_generated_path: self._open_with_ide(p))
+            button_layout.addWidget(ide_btn)
+            
+            button_layout.addSpacing(10)
+            
+            # 打开工程目录按钮
             open_btn = TransparentPushButton("打开工程目录")
             open_btn.setFixedHeight(28)
             open_btn.clicked.connect(lambda checked, p=self.last_generated_path: self._open_project(p))
             button_layout.addWidget(open_btn)
+            
             layout.addLayout(button_layout)
         else:
             empty_label = BodyLabel("暂无最近生成的工程")
@@ -472,13 +502,13 @@ class CodeGenerationInterface(QWidget):
         found_templates = []
 
         if os.path.exists(programs_dir):
-            # 查找5个工程模板文件
-            for template_name in ['Hello_World', 'MB_DDF', 'Helm_Control', 'Auto_Pilot', 'Upgrade_And_Test', 'No8RtBus']:
+            # 查找工程模板文件
+            for template_name in self.PROJECT_TYPES:
                 template_path = os.path.join(programs_dir, template_name)
                 if os.path.exists(template_path):
                     self.template_files[template_name] = template_path
                     found_templates.append(template_name)
-                    self._log(f"发现工程模板: {template_name}")
+                    # self._log(f"发现工程模板: {template_name}")
                 else:
                     self._log(f"⚠️ 未找到工程模板: {template_name}")
 
@@ -692,12 +722,15 @@ class CodeGenerationInterface(QWidget):
         # 收集配置
         # 获取工程名称（使用模板名称）
         project_name = current_data  # current_data 就是模板名（如 Hello_World）
+        
+        # 使用用户选择的输出目录作为基础目录
+        output_dir = self.dir_edit.text().strip()
 
         config = {
             'model_type': self.model_combo.text(),
             'project_type': self.PROJECT_TYPES.get(current_data, current_data),
             'project_file': project_file,
-            'output_dir': self.dir_edit.text().strip(),
+            'output_dir': output_dir,
             'project_name': project_name  # 添加工程名称
         }
 
@@ -770,8 +803,20 @@ class CodeGenerationInterface(QWidget):
 
     def _open_project(self, project_path):
         """打开工程目录"""
-        import subprocess
         try:
-            subprocess.Popen(['explorer', project_path])
+            # 使用引号包裹路径以处理空格
+            subprocess.Popen(['explorer', os.path.normpath(project_path)])
         except Exception as e:
             self._log(f"打开目录失败: {str(e)}")
+
+    def _open_with_ide(self, project_path):
+        """用 IDE 打开工程"""
+        if not project_path:
+            return
+        try:
+            # 使用 code 命令打开，并使用引号包裹路径以处理空格
+            path = os.path.normpath(project_path)
+            subprocess.Popen(f'code "{path}"', shell=True)
+            self._log(f"🚀 已尝试使用 IDE 打开: {path}")
+        except Exception as e:
+            self._log(f"❌ 无法使用 IDE 打开: {str(e)}")

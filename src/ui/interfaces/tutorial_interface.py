@@ -482,9 +482,9 @@ class TutorialInterface(QWidget):
 
     def _scan_documents(self, refresh=False):
         """扫描文档目录"""
-        # 清空现有列表
-        self._clear_layout(self.pdf_list_layout)
-        self._clear_layout(self.docx_list_layout)
+        # 清空现有列表，保留空状态提示标签
+        self._clear_layout(self.pdf_list_layout, exclude=[self.pdf_empty_label])
+        self._clear_layout(self.docx_list_layout, exclude=[self.docx_empty_label])
 
         # 扫描 PDF 文档
         pdf_dir = os.path.join(self.program_dir, "docs", "pdf")
@@ -719,12 +719,23 @@ class TutorialInterface(QWidget):
 
         return item
 
-    def _clear_layout(self, layout):
+    def _clear_layout(self, layout, exclude=None):
         """清空布局中的所有控件"""
-        while layout.count():
-            item = layout.takeAt(0)
+        if exclude is None:
+            exclude = []
+            
+        i = 0
+        while i < layout.count():
+            item = layout.itemAt(i)
+            if item.widget() and item.widget() in exclude:
+                i += 1
+                continue
+                
+            item = layout.takeAt(i)
             if item.widget():
                 item.widget().deleteLater()
+            elif item.layout():
+                self._clear_layout(item.layout())
 
     def _open_document(self, filepath):
         """打开文档"""

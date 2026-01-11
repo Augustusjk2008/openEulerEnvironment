@@ -29,15 +29,25 @@ def main():
     FontManager.apply_global_font(font_size_name)
 
     main_holder = {}
-    login_window = LoginWindow()
-
-    def _on_login_success(_username):
+    
+    if args.skip_login:
+        # 如果指定了跳过登录，直接创建并显示主窗口
         main_holder["window"] = MainWindow()
         main_holder["window"].show()
-        login_window.close()
-
-    login_window.login_success.connect(_on_login_success)
-    login_window.show()
+    else:
+        # 否则显示登录界面
+        login_window = LoginWindow()
+        
+        def _on_login_success(_username):
+            main_holder["window"] = MainWindow()
+            main_holder["window"].show()
+            login_window.close()
+            
+        login_window.login_success.connect(_on_login_success)
+        login_window.show()
+        # 保持引用以防被垃圾回收
+        main_holder["login"] = login_window
+        
     sys.exit(app.exec_())
 
 if __name__ == "__main__":

@@ -261,6 +261,17 @@ class InstallThread(QThread):
         if os.path.exists(cmake_bin):
             paths_to_add.append(cmake_bin)
 
+        # VSCode (如果安装了VSCode)
+        vscode_dir = os.path.join(target_dir, "VSCode")
+        if os.path.exists(vscode_dir):
+            # 优先添加 bin 目录 (包含 code 命令)
+            vscode_bin = os.path.join(vscode_dir, "bin")
+            if os.path.exists(vscode_bin):
+                paths_to_add.append(vscode_bin)
+            # 同时也添加根目录 (包含 Code.exe)
+            if os.path.exists(os.path.join(vscode_dir, "Code.exe")):
+                paths_to_add.append(vscode_dir)
+
         # 添加到用户环境变量
         try:
             key = winreg.OpenKey(

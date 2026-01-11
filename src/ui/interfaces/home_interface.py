@@ -11,15 +11,16 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import Qt, QSize, pyqtSignal
 from PyQt5.QtGui import QFont, QPixmap
 from qfluentwidgets import (
-    CardWidget, TransparentPushButton,
+    CardWidget, TransparentPushButton, TransparentToolButton,
     SubtitleLabel, BodyLabel, CaptionLabel, StrongBodyLabel,
-    FluentIcon as FIF, IconWidget, setTheme, Theme
+    FluentIcon as FIF, IconWidget
 )
 from PyQt5.QtGui import QPalette, QColor
 from core.font_manager import FontManager
 
 class NavigationBar(QFrame):
     """顶部简洁导航栏"""
+    settingsButtonClicked = pyqtSignal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -45,12 +46,20 @@ class NavigationBar(QFrame):
 
         # 程序名称
         self.app_name = SubtitleLabel("803所 RTopenEuler 系统管理工具")
-        self.app_name.setStyleSheet(f"color: #000000; font-size: {FontManager.get_font_size('large_title')}px; font-weight: 600;")
+        self.app_name.setStyleSheet(f"font-size: {FontManager.get_font_size('large_title')}px; font-weight: 600;")
+
+        # 设置按钮
+        self.settings_button = TransparentToolButton(FIF.SETTING, self)
+        self.settings_button.setFixedSize(48, 48)
+        self.settings_button.setIconSize(QSize(32, 32))
+        self.settings_button.setToolTip("设置")
+        self.settings_button.clicked.connect(self.settingsButtonClicked)
 
         left_layout.addWidget(self.logo_label)
         left_layout.addWidget(self.app_name)
         layout.addLayout(left_layout)
         layout.addStretch()
+        layout.addWidget(self.settings_button)
 
 
 class FunctionCard(CardWidget):
@@ -276,18 +285,12 @@ class HomeInterface(QWidget):
     switch_to_tutorial = pyqtSignal()
     switch_to_terminal = pyqtSignal()
     switch_to_ftp = pyqtSignal()
+    switch_to_settings = pyqtSignal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.parent_window = parent  # 保存父窗口引用
         self.setObjectName("homeInterface")
-
-        # 设置整体背景色
-        self.setStyleSheet("""
-            QWidget#homeInterface {
-                background-color: #F5F5F5;
-            }
-        """)
 
         # 主布局
         main_layout = QVBoxLayout(self)
@@ -367,6 +370,9 @@ class HomeInterface(QWidget):
 
     def _connect_signals(self):
         """连接信号槽"""
+        # 导航栏按钮
+        self.navigation_bar.settingsButtonClicked.connect(self.switch_to_settings)
+
         # 功能卡片按钮
         self.function_area.card1.button.clicked.connect(self._on_env_config_clicked)
         self.function_area.card2.button.clicked.connect(self._on_code_generate_clicked)
