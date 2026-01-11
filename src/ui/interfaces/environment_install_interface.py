@@ -23,8 +23,8 @@ from qfluentwidgets import (
     CheckBox, ToolButton, ProgressBar, TextEdit
 )
 import winreg
-from font_manager import FontManager
-from config_manager import get_program_dir
+from core.font_manager import FontManager
+from core.config_manager import get_program_dir
 
 
 class InstallThread(QThread):

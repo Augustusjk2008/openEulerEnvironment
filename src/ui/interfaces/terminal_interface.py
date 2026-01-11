@@ -16,8 +16,8 @@ from qfluentwidgets import (
     LineEdit, PushButton, PrimaryPushButton, FluentIcon as FIF,
     IconWidget, InfoBar, TextEdit
 )
-from config_manager import get_config_manager
-from font_manager import FontManager
+from core.config_manager import get_config_manager
+from core.font_manager import FontManager
 
 
 HISTORY_LINES = 2000

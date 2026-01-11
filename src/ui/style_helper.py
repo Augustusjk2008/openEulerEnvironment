@@ -3,7 +3,7 @@
 提供动态样式生成功能，避免硬编码字体大小
 """
 
-from font_manager import FontManager
+from core.font_manager import FontManager
 
 
 def get_font_style(size_type="body", **kwargs):

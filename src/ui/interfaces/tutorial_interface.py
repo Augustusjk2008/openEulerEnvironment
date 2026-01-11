@@ -21,8 +21,8 @@ from qfluentwidgets import (
     FluentIcon as FIF, IconWidget, LineEdit, PushButton,
     InfoBar, InfoBarPosition
 )
-from font_manager import FontManager
-from config_manager import get_program_dir
+from core.font_manager import FontManager
+from core.config_manager import get_program_dir
 
 
 DEFAULT_VISIBLE_VERSIONS = 3

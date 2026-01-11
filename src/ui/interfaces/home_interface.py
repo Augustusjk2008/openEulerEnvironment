@@ -16,7 +16,7 @@ from qfluentwidgets import (
     FluentIcon as FIF, IconWidget, setTheme, Theme
 )
 from PyQt5.QtGui import QPalette, QColor
-from font_manager import FontManager
+from core.font_manager import FontManager
 
 class NavigationBar(QFrame):
     """顶部简洁导航栏"""

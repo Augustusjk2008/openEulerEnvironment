@@ -17,8 +17,8 @@ from qfluentwidgets import (
     FluentIcon as FIF, IconWidget, LineEdit,
     CheckBox, InfoBar, InfoBarPosition, ComboBox, SwitchButton
 )
-from config_manager import get_config_manager
-from font_manager import FontManager
+from core.config_manager import get_config_manager
+from core.font_manager import FontManager
 from PyQt5.QtWidgets import QLabel as StdLabel
 
 

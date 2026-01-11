@@ -6,19 +6,19 @@ from PyQt5.QtWidgets import QApplication
 from PyQt5.QtCore import QSize, Qt
 from PyQt5.QtGui import QIcon, QFont
 from qfluentwidgets import FluentWindow, NavigationItemPosition, FluentIcon
-from config_manager import get_config_manager, set_program_dir_override
-from font_manager import FontManager
+from core.config_manager import get_config_manager, set_program_dir_override
+from core.font_manager import FontManager
 
 # 导入自定义界面
-from home_interface import HomeInterface
-from settings_interface import SettingsInterface
-from initializer_interface import InitializerInterface
-from environment_install_interface import EnvironmentInstallInterface
-from code_generation_interface import CodeGenerationInterface
-from tutorial_interface import TutorialInterface
-from terminal_interface import TerminalInterface
-from ftp_interface import FtpInterface
-from login_interface import LoginWindow
+from ui.interfaces.home_interface import HomeInterface
+from ui.interfaces.settings_interface import SettingsInterface
+from ui.interfaces.initializer_interface import InitializerInterface
+from ui.interfaces.environment_install_interface import EnvironmentInstallInterface
+from ui.interfaces.code_generation_interface import CodeGenerationInterface
+from ui.interfaces.tutorial_interface import TutorialInterface
+from ui.interfaces.terminal_interface import TerminalInterface
+from ui.interfaces.ftp_interface import FtpInterface
+from ui.interfaces.login_interface import LoginWindow
 
 warnings.filterwarnings(
     "ignore",
@@ -119,30 +119,4 @@ class MainWindow(FluentWindow):
         """切换到远程终端页面"""
         self.switchTo(self.terminalInterface)
 
-if __name__ == "__main__":
-    args, qt_args = _parse_args(sys.argv[1:])
-    if args.program_dir:
-        program_dir = os.path.abspath(args.program_dir)
-        if not os.path.isdir(program_dir):
-            print(f"指定目录不存在: {program_dir}")
-            sys.exit(1)
-        set_program_dir_override(program_dir)
 
-    app = QApplication([sys.argv[0]] + qt_args)
-
-    # 在创建窗口之前，先加载配置并应用全局字体
-    config_manager = get_config_manager()
-    font_size_name = config_manager.get("font_size", "small")
-    FontManager.apply_global_font(font_size_name)
-
-    main_holder = {}
-    login_window = LoginWindow()
-
-    def _on_login_success(_username):
-        main_holder["window"] = MainWindow()
-        main_holder["window"].show()
-        login_window.close()
-
-    login_window.login_success.connect(_on_login_success)
-    login_window.show()
-    sys.exit(app.exec_())

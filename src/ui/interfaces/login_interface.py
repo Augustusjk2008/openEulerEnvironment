@@ -14,9 +14,9 @@ from qfluentwidgets import (
     LineEdit, PushButton, PrimaryPushButton, InfoBar
 )
 
-from auth_manager import AuthManager
-from config_manager import get_program_dir
-from font_manager import FontManager
+from core.auth_manager import AuthManager
+from core.config_manager import get_program_dir
+from core.font_manager import FontManager
 
 
 class LoginWindow(QWidget):

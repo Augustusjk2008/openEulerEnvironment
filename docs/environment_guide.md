@@ -39,7 +39,7 @@ conda deactivate
 ### 运行 PyQt5 程序
 在激活的环境下，运行以下命令启动 PyQt5 程序：
 ```bash
-python src/main_window.py --dir H:\Resources\RTLinux\Environment
+python src/main.py --dir H:\Resources\RTLinux\Environment
 ```
 
 ## 4. 打包 Python 程序
@@ -54,7 +54,7 @@ pip install pyinstaller
 ### 执行打包
 在激活的环境下，运行以下命令打包程序：
 ```bash
-pyinstaller --noconsole --onefile .\src\main_window.py --name=openEulerManage.exe
+pyinstaller --noconsole --onefile .\src\main.py --name=openEulerManage.exe
 ```
 **参数说明：**
 - `--noconsole`: 运行时不显示黑色命令行窗口（适用于 GUI 程序）。

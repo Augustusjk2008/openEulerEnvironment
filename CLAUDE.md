@@ -45,10 +45,10 @@ conda run -n pyqt5_env pip install PyQt5 PyQt-Fluent-Widgets paramiko pyte wcwid
 
 ```bash
 # 开发模式运行
-python src/main_window.py
+python src/main.py
 
 # 打包为可执行文件
-pyinstaller --noconsole --onefile src/main_window.py
+pyinstaller --noconsole --onefile src/main.py
 ```
 
 ---
@@ -60,17 +60,25 @@ pyinstaller --noconsole --onefile src/main_window.py
 ```
 openEulerEnvironment/
 ├── src/                                  # 源代码
-│   ├── main_window.py                   # 主窗口 (FluentWindow)
-│   ├── home_interface.py                # 首页界面
-│   ├── tutorial_interface.py            # 教程与文档界面
-│   ├── settings_interface.py            # 设置界面
-│   ├── initializer_interface.py         # 系统初始化界面
-│   ├── environment_install_interface.py # 环境配置界面
-│   ├── code_generation_interface.py     # 代码生成界面
-│   ├── terminal_interface.py            # 内嵌 SSH 终端界面
-│   ├── config_manager.py                # 配置管理 (JSON)
-│   ├── font_manager.py                  # 全局字体与 DPI 适配
-│   └── style_helper.py                  # 动态样式助手
+│   ├── core/                            # 核心管理模块
+│   │   ├── auth_manager.py              # 用户认证管理
+│   │   ├── config_manager.py            # 配置管理 (JSON)
+│   │   └── font_manager.py              # 全局字体与 DPI 适配
+│   ├── ui/                               # UI 相关组件
+│   │   ├── interfaces/                  # 功能子界面
+│   │   │   ├── home_interface.py        # 首页界面
+│   │   │   ├── tutorial_interface.py    # 教程与文档界面
+│   │   │   ├── settings_interface.py    # 设置界面
+│   │   │   ├── initializer_interface.py # 系统初始化界面
+│   │   │   ├── environment_install_interface.py # 环境配置界面
+│   │   │   ├── code_generation_interface.py     # 代码生成界面
+│   │   │   ├── terminal_interface.py    # 内嵌 SSH 终端界面
+│   │   │   ├── ftp_interface.py         # FTP 客户端界面
+│   │   │   └── login_interface.py       # 登录界面
+│   │   ├── main_window.py               # 主窗口 (FluentWindow)
+│   │   └── style_helper.py              # 动态样式助手
+│   ├── __init__.py
+│   └── main.py                          # 程序统一入口
 ├── docs/                                 # 文档与资源
 │   ├── versions/                        # 版本说明 (txt)
 │   ├── images/                          # UI 截图与图示
@@ -79,7 +87,7 @@ openEulerEnvironment/
 └── CLAUDE.md                             # 本文件
 ```
 
-### 主窗口架构 (`main_window.py`)
+### 主窗口架构 (`ui/main_window.py`)
 
 - 基于 `FluentWindow` 实现导航结构
 - 窗口固定大小：1000x750

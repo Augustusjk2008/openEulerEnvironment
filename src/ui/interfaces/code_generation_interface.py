@@ -21,8 +21,8 @@ from qfluentwidgets import (
     FluentIcon as FIF, IconWidget, LineEdit, PushButton,
     ComboBox, TextEdit, InfoBar, InfoBarPosition
 )
-from config_manager import get_config_manager, get_program_dir
-from font_manager import FontManager
+from core.config_manager import get_config_manager, get_program_dir
+from core.font_manager import FontManager
 
 
 class CodeGenerateThread(QThread):

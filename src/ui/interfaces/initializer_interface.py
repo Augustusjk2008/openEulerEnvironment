@@ -7,8 +7,8 @@ from PyQt5.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QFileDialog
 from PyQt5.QtCore import QThread, pyqtSignal, Qt
 from qfluentwidgets import (PushButton, TextEdit, TitleLabel, SubtitleLabel,
                             StrongBodyLabel, CardWidget, CheckBox, InfoBar, InfoBarPosition)
-from config_manager import get_config_manager, get_program_dir
-from font_manager import FontManager
+from core.config_manager import get_config_manager, get_program_dir
+from core.font_manager import FontManager
 
 class FileUploadWorker(QThread):
     log_signal = pyqtSignal(str)

@@ -8,7 +8,7 @@ import json
 import os
 import time
 
-from config_manager import get_program_dir
+from core.config_manager import get_program_dir
 
 INVITE_CODE = "OPENEULER-202601"
 _FILE_MAGIC = "OEUSER1"
