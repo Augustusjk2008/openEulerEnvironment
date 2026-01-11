@@ -4,11 +4,12 @@
 """
 
 import locale
-import re
 import shutil
 import paramiko
-from PyQt5.QtCore import Qt, QProcess, QTimer
-from PyQt5.QtGui import QTextCursor, QKeySequence, QFont
+import pyte
+from wcwidth import wcwidth
+from PyQt5.QtCore import Qt, QProcess, QTimer, QObject, QThread, pyqtSignal, pyqtSlot
+from PyQt5.QtGui import QTextCursor, QKeySequence, QFont, QFontMetrics, QTextCharFormat, QColor
 from PyQt5.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QApplication, QSizePolicy
 from qfluentwidgets import (
     CardWidget, SubtitleLabel, BodyLabel, StrongBodyLabel, CaptionLabel,
@@ -19,20 +20,81 @@ from config_manager import get_config_manager
 from font_manager import FontManager
 
 
-ANSI_ESCAPE_RE = re.compile(
-    r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])"
-)
-OSC_ESCAPE_RE = re.compile(r"\x1B\][^\a]*(?:\a|\x1B\\)")
-MAX_BUFFER_CHARS = 60000
+HISTORY_LINES = 2000
+MIN_COLUMNS = 20
+MIN_LINES = 5
+ANSI_COLOR_MAP = {
+    "black": "#000000",
+    "red": "#cd3131",
+    "green": "#0dbc79",
+    "brown": "#e5e510",
+    "blue": "#2472c8",
+    "magenta": "#bc3fbc",
+    "cyan": "#11a8cd",
+    "white": "#e5e5e5",
+    "brightblack": "#666666",
+    "brightred": "#f14c4c",
+    "brightgreen": "#23d18b",
+    "brightbrown": "#f5f543",
+    "brightblue": "#3b8eea",
+    "brightmagenta": "#d670d6",
+    "brightcyan": "#29b8db",
+    "brightwhite": "#ffffff",
+}
+
+
+class SshConnectWorker(QObject):
+    connected = pyqtSignal(object)
+    failed = pyqtSignal(str, str)
+    finished = pyqtSignal()
+
+    def __init__(self, host, username, password, timeout=10):
+        super().__init__()
+        self.host = host
+        self.username = username
+        self.password = password
+        self.timeout = timeout
+
+    @pyqtSlot()
+    def run(self):
+        client = paramiko.SSHClient()
+        client.load_system_host_keys()
+        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        connect_kwargs = {
+            "hostname": self.host,
+            "username": self.username,
+            "timeout": self.timeout,
+        }
+        if self.password:
+            connect_kwargs.update({
+                "password": self.password,
+                "look_for_keys": False,
+                "allow_agent": False,
+            })
+        try:
+            client.connect(**connect_kwargs)
+            self.connected.emit(client)
+        except paramiko.BadHostKeyException as exc:
+            client.close()
+            self.failed.emit("bad_host_key", str(exc))
+        except paramiko.AuthenticationException as exc:
+            client.close()
+            self.failed.emit("auth", str(exc))
+        except Exception as exc:
+            client.close()
+            self.failed.emit("error", str(exc))
+        finally:
+            self.finished.emit()
 
 
 class TerminalTextEdit(TextEdit):
     """简易终端输入控件"""
 
-    def __init__(self, input_handler, focus_handler, parent=None):
+    def __init__(self, input_handler, focus_handler, resize_handler=None, parent=None):
         super().__init__(parent)
         self._input_handler = input_handler
         self._focus_handler = focus_handler
+        self._resize_handler = resize_handler
         self.setUndoRedoEnabled(False)
         self.setAcceptRichText(False)
         self.setReadOnly(True)
@@ -112,6 +174,11 @@ class TerminalTextEdit(TextEdit):
     def focusNextPrevChild(self, next):
         return False
 
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if self._resize_handler:
+            self._resize_handler()
+
 
 class TerminalInterface(QWidget):
     """终端界面"""
@@ -126,13 +193,25 @@ class TerminalInterface(QWidget):
         self.key_fix_process = QProcess(self)
         self._poll_timer = QTimer(self)
         self._key_fix_needed = False
+        self._connect_thread = None
+        self._connect_worker = None
+        self._connect_in_progress = False
+        self._connect_cancelled = False
+        self._screen = None
+        self._stream = None
+        self._format_cache = {}
+        self._default_fg = QColor("#D4D4D4")
+        self._default_bg = QColor("#1E1E1E")
+        self._default_format = QTextCharFormat()
+        self._default_format.setForeground(self._default_fg)
+        self._default_format.setBackground(self._default_bg)
         self._cursor_char = "█"
         self._cursor_visible = False
-        self._display_buffer = []
 
         self._init_ui()
         self._load_defaults()
         self._init_process()
+        self._init_terminal_emulator()
 
         app = QApplication.instance()
         if app is not None:
@@ -276,7 +355,11 @@ class TerminalInterface(QWidget):
         title.setStyleSheet(f"font-size: {FontManager.get_font_size('title')}px; color: #2D3748;")
         layout.addWidget(title)
 
-        self.output_text = TerminalTextEdit(self._handle_user_input, self._set_cursor_visible)
+        self.output_text = TerminalTextEdit(
+            self._handle_user_input,
+            self._set_cursor_visible,
+            self._on_terminal_resized,
+        )
         self.output_text.setLineWrapMode(TextEdit.NoWrap)
         self.output_text.setFont(QFont("Consolas", FontManager.get_font_size("body")))
         self.output_text.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
@@ -305,10 +388,147 @@ class TerminalInterface(QWidget):
         self._poll_timer.setInterval(50)
         self._poll_timer.timeout.connect(self._poll_ssh_output)
 
+    def _init_terminal_emulator(self):
+        self._ensure_terminal_size()
+
+    def _on_terminal_resized(self):
+        self._ensure_terminal_size()
+        self._refresh_view()
+
+    def _calc_terminal_size(self):
+        metrics = QFontMetrics(self.output_text.font())
+        char_width = max(metrics.horizontalAdvance("M"), 1)
+        char_height = max(metrics.height(), 1)
+        viewport = self.output_text.viewport().size()
+        columns = max(int(viewport.width() / char_width), MIN_COLUMNS)
+        lines = max(int(viewport.height() / char_height), MIN_LINES)
+        return columns, lines
+
+    def _ensure_terminal_size(self):
+        columns, lines = self._calc_terminal_size()
+        if self._screen is None:
+            self._screen = pyte.HistoryScreen(columns, lines, history=HISTORY_LINES)
+            self._stream = pyte.Stream(self._screen)
+            return
+
+        if columns != self._screen.columns or lines != self._screen.lines:
+            self._screen.resize(lines=lines, columns=columns)
+            if self.ssh_channel is not None and not self.ssh_channel.closed:
+                try:
+                    self.ssh_channel.resize_pty(width=columns, height=lines)
+                except Exception:
+                    pass
+
+    def _color_for(self, name, default_color):
+        if isinstance(name, tuple) and len(name) == 3:
+            return QColor(name[0], name[1], name[2])
+        if isinstance(name, str):
+            if name == "default":
+                return default_color
+            if len(name) == 6 and all(ch in "0123456789abcdef" for ch in name.lower()):
+                return QColor(f"#{name}")
+            mapped = ANSI_COLOR_MAP.get(name)
+            if mapped is not None:
+                return QColor(mapped)
+        return default_color
+
+    def _format_for_char(self, char):
+        fg_name = char.fg
+        bg_name = char.bg
+        reverse = char.reverse
+        if reverse:
+            fg_name, bg_name = bg_name, fg_name
+        key = (
+            fg_name,
+            bg_name,
+            char.bold,
+            char.italics,
+            char.underscore,
+            char.strikethrough,
+        )
+        if (
+            fg_name == "default"
+            and bg_name == "default"
+            and not char.bold
+            and not char.italics
+            and not char.underscore
+            and not char.strikethrough
+        ):
+            return self._default_format
+        cached = self._format_cache.get(key)
+        if cached is not None:
+            return cached
+
+        fmt = QTextCharFormat()
+        fmt.setForeground(self._color_for(fg_name, self._default_fg))
+        fmt.setBackground(self._color_for(bg_name, self._default_bg))
+        if char.bold:
+            fmt.setFontWeight(QFont.Bold)
+        if char.italics:
+            fmt.setFontItalic(True)
+        if char.underscore:
+            fmt.setFontUnderline(True)
+        if char.strikethrough:
+            fmt.setFontStrikeOut(True)
+        self._format_cache[key] = fmt
+        return fmt
+
+    def _collect_screen_lines(self):
+        if self._screen is None:
+            return [], 0
+        history = getattr(self._screen, "history", None)
+        history_top = list(history.top) if history is not None else []
+        history_bottom = list(history.bottom) if history is not None else []
+        lines = history_top[:]
+        for y in range(self._screen.lines):
+            lines.append(self._screen.buffer[y])
+        if history_bottom:
+            lines.extend(history_bottom)
+        return lines, len(history_top)
+
+    def _line_right_bound(self, line, cursor_col):
+        right_bound = -1
+        for x in range(self._screen.columns - 1, -1, -1):
+            if line[x].data != " ":
+                right_bound = x
+                break
+        if cursor_col is not None:
+            right_bound = max(right_bound, cursor_col)
+        return right_bound
+
     def _restart_terminal(self):
         self._on_connect_clicked()
 
+    def _start_connect_worker(self, host, username, password):
+        if self._connect_in_progress:
+            return
+        self._connect_in_progress = True
+        self._connect_cancelled = False
+        self.connect_btn.setEnabled(False)
+        self.status_label.setText("SSH 连接中（请稍候）")
+        self.status_label.setStyleSheet(f"color: #D97706; font-size: {FontManager.get_font_size('caption')}px;")
+
+        thread = QThread(self)
+        worker = SshConnectWorker(host, username, password)
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        worker.connected.connect(self._on_connect_success)
+        worker.failed.connect(self._on_connect_failed)
+        worker.finished.connect(thread.quit)
+        worker.finished.connect(worker.deleteLater)
+        thread.finished.connect(thread.deleteLater)
+        thread.finished.connect(self._on_connect_thread_finished)
+        self._connect_thread = thread
+        self._connect_worker = worker
+        thread.start()
+
+    def _on_connect_thread_finished(self):
+        self._connect_thread = None
+        self._connect_worker = None
+
     def _stop_terminal(self):
+        if self._connect_in_progress:
+            self._connect_cancelled = True
         if self.ssh_channel is not None:
             try:
                 self.ssh_channel.close()
@@ -332,14 +552,12 @@ class TerminalInterface(QWidget):
         self.status_label.setStyleSheet(f"color: #D83B01; font-size: {FontManager.get_font_size('caption')}px;")
         self._set_cursor_visible(False)
 
-    def _strip_ansi(self, text):
-        text = OSC_ESCAPE_RE.sub("", text)
-        return ANSI_ESCAPE_RE.sub("", text)
-
     def _append_output(self, text):
         if not text:
             return
-        self._apply_output(text)
+        if self._stream is None:
+            self._ensure_terminal_size()
+        self._stream.feed(text)
         self._refresh_view()
 
     def _send_raw(self, text):
@@ -366,13 +584,11 @@ class TerminalInterface(QWidget):
                 data = self.ssh_channel.recv(4096)
                 if data:
                     text = data.decode(self.encoding, errors="ignore")
-                    text = self._strip_ansi(text)
                     self._append_output(text)
             if self.ssh_channel.recv_stderr_ready():
                 data = self.ssh_channel.recv_stderr(4096)
                 if data:
                     text = data.decode(self.encoding, errors="ignore")
-                    text = self._strip_ansi(text)
                     self._append_output(text)
         except Exception as exc:
             self._append_output(f"\r\n[连接异常] {exc}\r\n")
@@ -391,53 +607,42 @@ class TerminalInterface(QWidget):
             InfoBar.warning("提示", "请填写完整的 SSH 连接信息。", duration=2000, parent=self.window())
             return
 
+        if self._connect_in_progress:
+            return
+
         if self.ssh_channel is not None:
             self._stop_terminal()
 
         self._key_fix_needed = False
         self.fix_key_btn.setEnabled(False)
+        self._ensure_terminal_size()
 
         self._append_output(f"\r\n$ ssh {username}@{host}\r\n")
+        self._start_connect_worker(host, username, password)
 
-        client = paramiko.SSHClient()
-        client.load_system_host_keys()
-        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        connect_kwargs = {
-            "hostname": host,
-            "username": username,
-            "timeout": 10,
-        }
-        if password:
-            connect_kwargs.update({
-                "password": password,
-                "look_for_keys": False,
-                "allow_agent": False,
-            })
+    def _on_disconnect_clicked(self):
+        if self._connect_in_progress:
+            self._connect_cancelled = True
+            self.status_label.setText("SSH 连接取消中")
+            self.status_label.setStyleSheet(f"color: #D97706; font-size: {FontManager.get_font_size('caption')}px;")
+            return
+        if self.ssh_channel is not None and not self.ssh_channel.closed:
+            self._send_raw("exit\n")
+        self._stop_terminal()
+
+    def _on_connect_success(self, client):
+        self._connect_in_progress = False
+        self.connect_btn.setEnabled(True)
+        if self._connect_cancelled:
+            client.close()
+            self.status_label.setText("SSH 已取消")
+            self.status_label.setStyleSheet(f"color: #D83B01; font-size: {FontManager.get_font_size('caption')}px;")
+            return
+
+        columns = self._screen.columns if self._screen is not None else MIN_COLUMNS
+        lines = self._screen.lines if self._screen is not None else MIN_LINES
         try:
-            client.connect(**connect_kwargs)
-            channel = client.invoke_shell(term="xterm")
-            self.ssh_client = client
-            self.ssh_channel = channel
-            self._poll_timer.start()
-            self.status_label.setText("SSH 已连接")
-            self.status_label.setStyleSheet(f"color: #107C10; font-size: {FontManager.get_font_size('caption')}px;")
-            self._set_cursor_visible(self.output_text.hasFocus())
-        except paramiko.BadHostKeyException as exc:
-            client.close()
-            self._key_fix_needed = True
-            self.fix_key_btn.setEnabled(True)
-            self.status_label.setText("SSH 连接失败")
-            self.status_label.setStyleSheet(f"color: #D83B01; font-size: {FontManager.get_font_size('caption')}px;")
-            InfoBar.error("主机密钥异常", "检测到主机密钥异常，可点击“修复密钥”。", duration=4000, parent=self.window())
-            self._append_output(f"\r\n[主机密钥异常] {exc}\r\n")
-            self._set_cursor_visible(False)
-        except paramiko.AuthenticationException as exc:
-            client.close()
-            self.status_label.setText("SSH 连接失败")
-            self.status_label.setStyleSheet(f"color: #D83B01; font-size: {FontManager.get_font_size('caption')}px;")
-            InfoBar.error("无法登录", "SSH 认证失败，请检查用户名或密码。", duration=4000, parent=self.window())
-            self._append_output(f"\r\n[认证失败] {exc}\r\n")
-            self._set_cursor_visible(False)
+            channel = client.invoke_shell(term="xterm", width=columns, height=lines)
         except Exception as exc:
             client.close()
             self.status_label.setText("SSH 连接失败")
@@ -445,11 +650,41 @@ class TerminalInterface(QWidget):
             InfoBar.error("无法连接", f"连接 SSH 失败：{exc}", duration=4000, parent=self.window())
             self._append_output(f"\r\n[连接失败] {exc}\r\n")
             self._set_cursor_visible(False)
+            return
 
-    def _on_disconnect_clicked(self):
-        if self.ssh_channel is not None and not self.ssh_channel.closed:
-            self._send_raw("exit\n")
-        self._stop_terminal()
+        self.ssh_client = client
+        self.ssh_channel = channel
+        self._poll_timer.start()
+        self.status_label.setText("SSH 已连接")
+        self.status_label.setStyleSheet(f"color: #107C10; font-size: {FontManager.get_font_size('caption')}px;")
+        self._set_cursor_visible(self.output_text.hasFocus())
+
+    def _on_connect_failed(self, error_type, message):
+        self._connect_in_progress = False
+        self.connect_btn.setEnabled(True)
+        if self._connect_cancelled:
+            self.status_label.setText("SSH 已取消")
+            self.status_label.setStyleSheet(f"color: #D83B01; font-size: {FontManager.get_font_size('caption')}px;")
+            return
+
+        self.status_label.setText("SSH 连接失败")
+        self.status_label.setStyleSheet(f"color: #D83B01; font-size: {FontManager.get_font_size('caption')}px;")
+        if error_type == "bad_host_key":
+            self._key_fix_needed = True
+            self.fix_key_btn.setEnabled(True)
+            InfoBar.error("主机密钥异常", "检测到主机密钥异常，可点击“修复密钥”。", duration=4000, parent=self.window())
+            self._append_output(f"\r\n[主机密钥异常] {message}\r\n")
+            self._set_cursor_visible(False)
+            return
+        if error_type == "auth":
+            InfoBar.error("无法登录", "SSH 认证失败，请检查用户名或密码。", duration=4000, parent=self.window())
+            self._append_output(f"\r\n[认证失败] {message}\r\n")
+            self._set_cursor_visible(False)
+            return
+
+        InfoBar.error("无法连接", f"连接 SSH 失败：{message}", duration=4000, parent=self.window())
+        self._append_output(f"\r\n[连接失败] {message}\r\n")
+        self._set_cursor_visible(False)
 
     def _on_key_fix_ready_read(self):
         data = self.key_fix_process.readAllStandardOutput()
@@ -483,7 +718,8 @@ class TerminalInterface(QWidget):
         self.key_fix_process.start(keygen_path, ["-R", host])
 
     def _clear_output(self):
-        self._display_buffer = []
+        if self._screen is not None:
+            self._screen.reset()
         self._refresh_view()
 
     def _set_cursor_visible(self, visible):
@@ -506,80 +742,53 @@ class TerminalInterface(QWidget):
         except Exception:
             pass
 
-    def _apply_output(self, text):
-        if not text:
-            return
-
-        text = text.replace("\r\n", "\n")
-        chunks = text.split("\r")
-        for index, chunk in enumerate(chunks):
-            if index > 0:
-                self._clear_current_line()
-            for ch in chunk:
-                if ch == "\b" or ch == "\x7f":
-                    self._backspace()
-                elif ch == "\t":
-                    self._append_tab()
-                elif ch == "\n":
-                    self._display_buffer.append("\n")
-                else:
-                    self._display_buffer.append(ch)
-
-        self._trim_buffer()
-
-    def _clear_current_line(self):
-        last_newline = self._last_newline_index()
-        if last_newline >= 0:
-            self._display_buffer = self._display_buffer[:last_newline + 1]
-        else:
-            self._display_buffer = []
-
-    def _backspace(self):
-        if not self._display_buffer:
-            return
-        if self._display_buffer[-1] == "\n":
-            return
-        self._display_buffer.pop()
-
-    def _append_tab(self):
-        col = self._current_line_length()
-        next_stop = ((col // 4) + 1) * 4
-        spaces = next_stop - col
-        self._display_buffer.extend(" " * spaces)
-
-    def _current_line_length(self):
-        last_newline = self._last_newline_index()
-        if last_newline < 0:
-            return len(self._display_buffer)
-        return len(self._display_buffer) - last_newline - 1
-
-    def _last_newline_index(self):
-        for idx in range(len(self._display_buffer) - 1, -1, -1):
-            if self._display_buffer[idx] == "\n":
-                return idx
-        return -1
-
-    def _trim_buffer(self):
-        if len(self._display_buffer) <= MAX_BUFFER_CHARS:
-            return
-        excess = len(self._display_buffer) - MAX_BUFFER_CHARS
-        cut = 0
-        for idx in range(excess, len(self._display_buffer)):
-            if self._display_buffer[idx] == "\n":
-                cut = idx + 1
-                break
-        if cut == 0:
-            cut = excess
-        self._display_buffer = self._display_buffer[cut:]
-
     def _refresh_view(self):
-        text = "".join(self._display_buffer)
-        if self._cursor_visible:
-            text += self._cursor_char
+        if self._screen is None:
+            self.output_text.setPlainText("")
+            return
+
+        lines, history_len = self._collect_screen_lines()
+        cursor_line = history_len + self._screen.cursor.y if self._cursor_visible else None
+        cursor_col = self._screen.cursor.x if self._cursor_visible else None
+        if cursor_col is not None:
+            cursor_col = min(cursor_col, self._screen.columns - 1)
+
         self.output_text.blockSignals(True)
-        self.output_text.setPlainText(text)
-        cursor = self.output_text.textCursor()
-        cursor.movePosition(QTextCursor.End)
-        self.output_text.setTextCursor(cursor)
+        doc = self.output_text.document()
+        doc.clear()
+        cursor = QTextCursor(doc)
+
+        for row_idx, line in enumerate(lines):
+            active_cursor_col = cursor_col if row_idx == cursor_line else None
+            right_bound = self._line_right_bound(line, active_cursor_col)
+            if right_bound >= 0:
+                current_fmt = None
+                run_text = []
+                skip_next = False
+                for x in range(min(right_bound + 1, self._screen.columns)):
+                    if skip_next:
+                        skip_next = False
+                        continue
+                    cell = line[x]
+                    char_data = cell.data or " "
+                    if active_cursor_col is not None and x == active_cursor_col:
+                        char_data = self._cursor_char
+                    fmt = self._format_for_char(cell)
+                    if fmt is not current_fmt:
+                        if run_text:
+                            cursor.insertText("".join(run_text), current_fmt or self._default_format)
+                            run_text = []
+                        current_fmt = fmt
+                    run_text.append(char_data)
+                    if wcwidth(char_data) == 2:
+                        skip_next = True
+                if run_text:
+                    cursor.insertText("".join(run_text), current_fmt or self._default_format)
+            if row_idx < len(lines) - 1:
+                cursor.insertText("\n", self._default_format)
+
         self.output_text.blockSignals(False)
+        end_cursor = self.output_text.textCursor()
+        end_cursor.movePosition(QTextCursor.End)
+        self.output_text.setTextCursor(end_cursor)
         self.output_text.ensureCursorVisible()

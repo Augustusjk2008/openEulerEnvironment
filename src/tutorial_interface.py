@@ -25,6 +25,9 @@ from font_manager import FontManager
 from config_manager import get_program_dir
 
 
+DEFAULT_VISIBLE_VERSIONS = 3
+
+
 class ClickableLabel(QLabel):
     """可点击的标签（超链接样式）"""
     clicked = pyqtSignal()
@@ -67,6 +70,8 @@ class TutorialInterface(QWidget):
         self.setObjectName("tutorialInterface")
         self.program_dir = self._get_program_dir()
         self._expanded_version_item = None
+        self._versions_expanded = False
+        self._version_items = []
 
         self.init_ui()
         self._scan_documents()
@@ -395,6 +400,12 @@ class TutorialInterface(QWidget):
 
         layout.addWidget(self.version_list_widget)
 
+        self.version_toggle_btn = TransparentPushButton("展开更多")
+        self.version_toggle_btn.setFixedHeight(28)
+        self.version_toggle_btn.setVisible(False)
+        self.version_toggle_btn.clicked.connect(self._toggle_versions_expanded)
+        layout.addWidget(self.version_toggle_btn, alignment=Qt.AlignCenter)
+
         return card
 
     def _create_help_card(self):
@@ -519,6 +530,7 @@ class TutorialInterface(QWidget):
         """扫描版本信息目录"""
         self._clear_layout(self.version_list_layout)
         self._expanded_version_item = None
+        self._version_items = []
 
         versions_dir = self._get_versions_dir()
         version_files = []
@@ -531,17 +543,21 @@ class TutorialInterface(QWidget):
         self.version_count_label.setText(f"({len(version_files)})")
 
         if version_files:
-            for version_file in version_files:
+            for idx, version_file in enumerate(version_files):
                 version = Path(version_file).stem
                 content = self._read_version_file(os.path.join(versions_dir, version_file))
                 release_date = self._extract_release_date(content)
                 item = self._create_version_item(version, content, release_date)
+                item.setVisible(self._versions_expanded or idx < DEFAULT_VISIBLE_VERSIONS)
                 self.version_list_layout.addWidget(item)
+                self._version_items.append(item)
         else:
             empty_label = BodyLabel("暂无版本信息")
             empty_label.setStyleSheet("color: #A0A0A0; padding: 15px;")
             empty_label.setAlignment(Qt.AlignCenter)
             self.version_list_layout.addWidget(empty_label)
+
+        self._update_version_toggle(len(version_files))
 
         if refresh:
             InfoBar.success("刷新完成", f"已更新版本信息：{len(version_files)} 个",
@@ -650,6 +666,30 @@ class TutorialInterface(QWidget):
 
         item._set_expanded(True)
         self._expanded_version_item = item
+
+    def _toggle_versions_expanded(self):
+        if not self._version_items:
+            return
+        self._versions_expanded = not self._versions_expanded
+        for idx, item in enumerate(self._version_items):
+            item.setVisible(self._versions_expanded or idx < DEFAULT_VISIBLE_VERSIONS)
+        if not self._versions_expanded and self._expanded_version_item is not None:
+            if self._expanded_version_item not in self._version_items[:DEFAULT_VISIBLE_VERSIONS]:
+                self._expanded_version_item._set_expanded(False)
+                self._expanded_version_item = None
+        self._update_version_toggle(len(self._version_items))
+
+    def _update_version_toggle(self, total_versions):
+        if total_versions <= DEFAULT_VISIBLE_VERSIONS:
+            self._versions_expanded = False
+            self.version_toggle_btn.setVisible(False)
+            return
+        self.version_toggle_btn.setVisible(True)
+        if self._versions_expanded:
+            self.version_toggle_btn.setText("收起")
+        else:
+            hidden_count = total_versions - DEFAULT_VISIBLE_VERSIONS
+            self.version_toggle_btn.setText(f"展开更多 ({hidden_count})")
 
     def _create_document_item(self, filename, filepath, file_type):
         """创建文档列表项（超链接样式）"""
