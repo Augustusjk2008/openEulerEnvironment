@@ -175,12 +175,23 @@ class FunctionArea(QWidget):
             color="#005A9E"
         )
 
+        # 卡片 6：FTP 客户端（青绿色）
+        self.card6 = FunctionCard(
+            icon=FIF.FOLDER,
+            title="FTP 客户端",
+            description="本地与远程文件的上传、下载和移动，方便直接管理设备文件",
+            button_text="打开 FTP",
+            color="#008272"
+        )
+
+
         # 添加卡片到网格（3列2行）
         grid_layout.addWidget(self.card1, 0, 0)
         grid_layout.addWidget(self.card2, 0, 1)
         grid_layout.addWidget(self.card5, 0, 2)
-        grid_layout.addWidget(self.card3, 1, 0)
-        grid_layout.addWidget(self.card4, 1, 1)
+        grid_layout.addWidget(self.card6, 1, 0)
+        grid_layout.addWidget(self.card3, 1, 1)
+        grid_layout.addWidget(self.card4, 1, 2)
 
         # 居中对齐网格
         grid_layout.setColumnStretch(0, 1)
@@ -248,7 +259,7 @@ class StatusBar(QFrame):
         layout.setContentsMargins(30, 10, 30, 10)
 
         # 左侧：版本信息
-        version_label = CaptionLabel("v0.0.3 抢先版")
+        version_label = CaptionLabel("v0.0.4 抢先版")
         version_label.setStyleSheet(f"color: #7A8A9A; font-size: {FontManager.get_font_size('caption')}px;")
 
         layout.addWidget(version_label)
@@ -264,6 +275,7 @@ class HomeInterface(QWidget):
     switch_to_codegen = pyqtSignal()
     switch_to_tutorial = pyqtSignal()
     switch_to_terminal = pyqtSignal()
+    switch_to_ftp = pyqtSignal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -361,6 +373,7 @@ class HomeInterface(QWidget):
         self.function_area.card3.button.clicked.connect(self._on_init_wizard_clicked)
         self.function_area.card4.button.clicked.connect(self._on_tutorial_clicked)
         self.function_area.card5.button.clicked.connect(self._on_terminal_clicked)
+        self.function_area.card6.button.clicked.connect(self._on_ftp_clicked)
 
     def _on_env_config_clicked(self):
         """开发环境配置按钮点击事件 - 跳转到环境配置页面"""
@@ -377,6 +390,10 @@ class HomeInterface(QWidget):
     def _on_tutorial_clicked(self):
         """教程与文档按钮点击事件 - 跳转到教程页面"""
         self.switch_to_tutorial.emit()
+
+    def _on_ftp_clicked(self):
+        """FTP 客户端按钮点击事件 - 跳转到 FTP 页面"""
+        self.switch_to_ftp.emit()
 
     def _on_terminal_clicked(self):
         """远程终端按钮点击事件 - 跳转到终端页面"""

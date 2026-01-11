@@ -103,8 +103,9 @@ class TerminalTextEdit(TextEdit):
 
     def keyPressEvent(self, event):
         if event.matches(QKeySequence.Copy):
-            self.copy()
-            return
+            if self.textCursor().hasSelection():
+                self.copy()
+                return
 
         if event.matches(QKeySequence.Paste):
             text = QApplication.clipboard().text()

@@ -41,6 +41,9 @@ class ConfigManager:
         "ssh_host": "192.168.137.100",  # SSH 主机地址
         "ssh_username": "root",  # SSH 用户名
         "ssh_password": "Shanghaith8",  # SSH 密码
+        "ftp_host": "192.168.137.100",  # FTP ????
+        "ftp_username": "root",  # FTP ???
+        "ftp_password": "Shanghaith8",  # FTP ??
         "auto_check_update": False,  # 自动检查更新
         "show_log_timestamp": True,  # 显示日志时间戳
         "confirm_before_init": True,  # 初始化前确认
