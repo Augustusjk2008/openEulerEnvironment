@@ -1,0 +1,19 @@
+# RTopenEuler 系统管理工具 - 依赖列表
+# 适用于 PyQt5 + PyQt-Fluent-Widgets 桌面应用程序
+
+# 核心依赖
+PyQt5==5.15.9
+qfluentwidgets
+paramiko==3.3.1
+
+# 终端功能支持（可选）
+pyte
+
+# 文档查看功能（可选）
+# pdfplumber
+# python-docx
+
+# 开发和调试工具（可选）
+# pyinstaller  # 打包使用
+# pytest       # 单元测试
+# black        # 代码格式化

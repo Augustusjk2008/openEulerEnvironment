@@ -115,11 +115,11 @@ class FunctionCard(CardWidget):
 
 
 class FunctionArea(QWidget):
-    """核心功能区（2列2行卡片布局）"""
+    """核心功能区（3列2行卡片布局）"""
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setFixedHeight(600)
+        self.setFixedHeight(640)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(30, 10, 30, 10)
@@ -166,20 +166,31 @@ class FunctionArea(QWidget):
             color="#D83B01"
         )
 
-        # 添加卡片到网格（2列2行）
+        # 卡片 5：远程终端（深蓝色）
+        self.card5 = FunctionCard(
+            icon=FIF.DEVELOPER_TOOLS,
+            title="远程终端",
+            description="通过 SSH 远程登录 CCU 设备，执行命令并查看输出",
+            button_text="打开终端",
+            color="#005A9E"
+        )
+
+        # 添加卡片到网格（3列2行）
         grid_layout.addWidget(self.card1, 0, 0)
         grid_layout.addWidget(self.card2, 0, 1)
+        grid_layout.addWidget(self.card5, 0, 2)
         grid_layout.addWidget(self.card3, 1, 0)
         grid_layout.addWidget(self.card4, 1, 1)
 
         # 居中对齐网格
         grid_layout.setColumnStretch(0, 1)
         grid_layout.setColumnStretch(1, 1)
+        grid_layout.setColumnStretch(2, 1)
 
         # 创建一个容器来居中显示
         container = QWidget()
         container.setLayout(grid_layout)
-        container.setMaximumWidth(780)
+        container.setMaximumWidth(1180)
 
         container_layout = QHBoxLayout()
         container_layout.addStretch()
@@ -252,6 +263,7 @@ class HomeInterface(QWidget):
     switch_to_environment = pyqtSignal()
     switch_to_codegen = pyqtSignal()
     switch_to_tutorial = pyqtSignal()
+    switch_to_terminal = pyqtSignal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -348,6 +360,7 @@ class HomeInterface(QWidget):
         self.function_area.card2.button.clicked.connect(self._on_code_generate_clicked)
         self.function_area.card3.button.clicked.connect(self._on_init_wizard_clicked)
         self.function_area.card4.button.clicked.connect(self._on_tutorial_clicked)
+        self.function_area.card5.button.clicked.connect(self._on_terminal_clicked)
 
     def _on_env_config_clicked(self):
         """开发环境配置按钮点击事件 - 跳转到环境配置页面"""
@@ -364,3 +377,7 @@ class HomeInterface(QWidget):
     def _on_tutorial_clicked(self):
         """教程与文档按钮点击事件 - 跳转到教程页面"""
         self.switch_to_tutorial.emit()
+
+    def _on_terminal_clicked(self):
+        """远程终端按钮点击事件 - 跳转到终端页面"""
+        self.switch_to_terminal.emit()

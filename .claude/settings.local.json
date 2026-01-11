@@ -2,7 +2,13 @@
   "permissions": {
     "allow": [
       "Bash(python:*)",
-      "Bash(git init:*)"
+      "Bash(git init:*)",
+      "Bash(conda activate:*)",
+      "Bash(pip install:*)",
+      "Bash(call conda activate pyqt5_env)",
+      "Bash(cmd /c \"conda activate pyqt5_env && pip install sip PyQt-builder\")",
+      "Bash(where conda)",
+      "Bash(D:ProgramDataanaconda3Scriptsconda.exe activate:*)"
     ]
   }
 }

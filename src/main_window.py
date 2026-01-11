@@ -1,6 +1,7 @@
 import argparse
 import os
 import sys
+import warnings
 from PyQt5.QtWidgets import QApplication
 from PyQt5.QtCore import QSize, Qt
 from PyQt5.QtGui import QIcon, QFont
@@ -15,6 +16,13 @@ from initializer_interface import InitializerInterface
 from environment_install_interface import EnvironmentInstallInterface
 from code_generation_interface import CodeGenerationInterface
 from tutorial_interface import TutorialInterface
+from terminal_interface import TerminalInterface
+
+warnings.filterwarnings(
+    "ignore",
+    message="sipPyTypeDict\\(\\) is deprecated.*",
+    category=DeprecationWarning
+)
 
 
 def _parse_args(argv):
@@ -36,6 +44,7 @@ class MainWindow(FluentWindow):
         self.initializerInterface = InitializerInterface(self)
         self.codeGenerationInterface = CodeGenerationInterface(self)
         self.tutorialInterface = TutorialInterface(self)
+        self.terminalInterface = TerminalInterface(self)
         self.settingsInterface = SettingsInterface(self)
 
         # 连接设置界面信号
@@ -66,6 +75,7 @@ class MainWindow(FluentWindow):
         self.addSubInterface(self.homeInterface, FluentIcon.HOME, '首页')
         self.environment_key = self.addSubInterface(self.environmentInstallInterface, FluentIcon.APPLICATION, '环境配置')
         self.codegen_key = self.addSubInterface(self.codeGenerationInterface, FluentIcon.EDIT, '代码生成')
+        self.terminal_key = self.addSubInterface(self.terminalInterface, FluentIcon.DEVELOPER_TOOLS, '远程终端')
         self.initializer_key = self.addSubInterface(self.initializerInterface, FluentIcon.SYNC, '系统初始化')
         self.tutorial_key = self.addSubInterface(self.tutorialInterface, FluentIcon.HELP, '教程文档')
 
@@ -77,6 +87,7 @@ class MainWindow(FluentWindow):
         self.homeInterface.switch_to_environment.connect(self._switch_to_environment_page)
         self.homeInterface.switch_to_codegen.connect(self._switch_to_codegen_page)
         self.homeInterface.switch_to_tutorial.connect(self._switch_to_tutorial_page)
+        self.homeInterface.switch_to_terminal.connect(self._switch_to_terminal_page)
 
     def _switch_to_environment_page(self):
         """切换到环境配置页面"""
@@ -95,6 +106,10 @@ class MainWindow(FluentWindow):
         """切换到教程文档页面"""
         self.switchTo(self.tutorialInterface)
 
+    def _switch_to_terminal_page(self):
+        """切换到远程终端页面"""
+        self.switchTo(self.terminalInterface)
+
 if __name__ == "__main__":
     args, qt_args = _parse_args(sys.argv[1:])
     if args.program_dir:
@@ -105,6 +120,9 @@ if __name__ == "__main__":
         set_program_dir_override(program_dir)
 
     app = QApplication([sys.argv[0]] + qt_args)
+
+    # 强制使用浅色主题，避免 QtWebEngine 影响整体样式
+    setTheme(Theme.LIGHT)
 
     # 在创建窗口之前，先加载配置并应用全局字体
     config_manager = get_config_manager()
