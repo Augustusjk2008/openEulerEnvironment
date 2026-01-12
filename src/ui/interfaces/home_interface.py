@@ -124,7 +124,7 @@ class FunctionCard(CardWidget):
 
 
 class FunctionArea(QWidget):
-    """核心功能区（3列2行卡片布局）"""
+    """核心功能区（4列2行卡片布局）"""
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -136,7 +136,7 @@ class FunctionArea(QWidget):
 
         # 卡片网格布局
         grid_layout = QGridLayout()
-        grid_layout.setSpacing(20)
+        grid_layout.setSpacing(30)
         grid_layout.setContentsMargins(0, 10, 0, 0)
 
         # 卡片 1：开发环境配置（蓝色）
@@ -193,12 +193,21 @@ class FunctionArea(QWidget):
             color="#008272"
         )
 
+        # 卡片 7：数据可视化（蓝绿色）
+        self.card7 = FunctionCard(
+            icon=FIF.PIE_SINGLE,
+            title="数据可视化",
+            description="读取 SLOG 数据并按条目序号绘制曲线，可勾选需要展示的字段",
+            button_text="打开可视化",
+            color="#0078A8"
+        )
 
-        # 添加卡片到网格（3列2行）
+        # 添加卡片到网格（4列2行）
         grid_layout.addWidget(self.card1, 0, 0)
         grid_layout.addWidget(self.card2, 0, 1)
         grid_layout.addWidget(self.card5, 0, 2)
-        grid_layout.addWidget(self.card6, 1, 0)
+        grid_layout.addWidget(self.card6, 0, 3)
+        grid_layout.addWidget(self.card7, 1, 0)
         grid_layout.addWidget(self.card3, 1, 1)
         grid_layout.addWidget(self.card4, 1, 2)
 
@@ -206,11 +215,12 @@ class FunctionArea(QWidget):
         grid_layout.setColumnStretch(0, 1)
         grid_layout.setColumnStretch(1, 1)
         grid_layout.setColumnStretch(2, 1)
+        grid_layout.setColumnStretch(3, 1)
 
         # 创建一个容器来居中显示
         container = QWidget()
         container.setLayout(grid_layout)
-        container.setMaximumWidth(1180)
+        container.setMaximumWidth(1650)
 
         container_layout = QHBoxLayout()
         container_layout.addStretch()
@@ -285,6 +295,7 @@ class HomeInterface(QWidget):
     switch_to_tutorial = pyqtSignal()
     switch_to_terminal = pyqtSignal()
     switch_to_ftp = pyqtSignal()
+    switch_to_data_visualization = pyqtSignal()
     switch_to_settings = pyqtSignal()
 
     def __init__(self, parent=None):
@@ -380,6 +391,7 @@ class HomeInterface(QWidget):
         self.function_area.card4.button.clicked.connect(self._on_tutorial_clicked)
         self.function_area.card5.button.clicked.connect(self._on_terminal_clicked)
         self.function_area.card6.button.clicked.connect(self._on_ftp_clicked)
+        self.function_area.card7.button.clicked.connect(self._on_data_visualization_clicked)
 
     def _on_env_config_clicked(self):
         """开发环境配置按钮点击事件 - 跳转到环境配置页面"""
@@ -400,6 +412,10 @@ class HomeInterface(QWidget):
     def _on_ftp_clicked(self):
         """FTP 客户端按钮点击事件 - 跳转到 FTP 页面"""
         self.switch_to_ftp.emit()
+
+    def _on_data_visualization_clicked(self):
+        """数据可视化按钮点击事件 - 跳转到数据可视化页面"""
+        self.switch_to_data_visualization.emit()
 
     def _on_terminal_clicked(self):
         """远程终端按钮点击事件 - 跳转到终端页面"""

@@ -18,6 +18,7 @@ from ui.interfaces.code_generation_interface import CodeGenerationInterface
 from ui.interfaces.tutorial_interface import TutorialInterface
 from ui.interfaces.terminal_interface import TerminalInterface
 from ui.interfaces.ftp_interface import FtpInterface
+from ui.interfaces.data_visualization_interface import DataVisualizationInterface
 from ui.interfaces.login_interface import LoginWindow
 
 warnings.filterwarnings(
@@ -26,13 +27,11 @@ warnings.filterwarnings(
     category=DeprecationWarning
 )
 
-
 def _parse_args(argv):
     parser = argparse.ArgumentParser(description="RTopenEuler 系统管理工具")
     parser.add_argument("-d", "--dir", dest="program_dir", help="指定程序资源目录")
     parser.add_argument("--skip-login", action="store_true", help="跳过登录界面直接进入主页")
     return parser.parse_known_args(argv)
-
 
 class MainWindow(FluentWindow):
     def __init__(self):
@@ -49,6 +48,7 @@ class MainWindow(FluentWindow):
         self.tutorialInterface = TutorialInterface(self)
         self.terminalInterface = TerminalInterface(self)
         self.ftpInterface = FtpInterface(self)
+        self.dataVisualizationInterface = DataVisualizationInterface(self)
         self.settingsInterface = SettingsInterface(self)
 
         # 连接设置界面信号
@@ -61,7 +61,7 @@ class MainWindow(FluentWindow):
         FontManager.apply_font_to_widget(self)
 
     def init_window(self):
-        self.resize(1400, 1000)
+        self.resize(1700, 1050)
         self.setWindowTitle('RTopenEuler 系统管理工具')
         self.setWindowIcon(QIcon(os.path.join(get_program_dir(), "assets", "logo.png")))
 
@@ -82,6 +82,11 @@ class MainWindow(FluentWindow):
         self.codegen_key = self.addSubInterface(self.codeGenerationInterface, FluentIcon.EDIT, '代码生成')
         self.terminal_key = self.addSubInterface(self.terminalInterface, FluentIcon.DEVELOPER_TOOLS, '远程终端')
         self.ftp_key = self.addSubInterface(self.ftpInterface, FluentIcon.FOLDER, 'FTP客户端')
+        self.data_visualization_key = self.addSubInterface(
+            self.dataVisualizationInterface,
+            FluentIcon.PIE_SINGLE,
+            '数据可视化'
+        )
         self.initializer_key = self.addSubInterface(self.initializerInterface, FluentIcon.SYNC, '系统初始化')
         self.tutorial_key = self.addSubInterface(self.tutorialInterface, FluentIcon.HELP, '教程文档')
 
@@ -95,6 +100,7 @@ class MainWindow(FluentWindow):
         self.homeInterface.switch_to_tutorial.connect(self._switch_to_tutorial_page)
         self.homeInterface.switch_to_terminal.connect(self._switch_to_terminal_page)
         self.homeInterface.switch_to_ftp.connect(self._switch_to_ftp_page)
+        self.homeInterface.switch_to_data_visualization.connect(self._switch_to_data_visualization_page)
         self.homeInterface.switch_to_settings.connect(self._switch_to_settings_page)
 
     def _switch_to_environment_page(self):
@@ -121,6 +127,10 @@ class MainWindow(FluentWindow):
     def _switch_to_terminal_page(self):
         """切换到远程终端页面"""
         self.switchTo(self.terminalInterface)
+
+    def _switch_to_data_visualization_page(self):
+        """切换到数据可视化页面"""
+        self.switchTo(self.dataVisualizationInterface)
 
     def _switch_to_settings_page(self):
         """切换到设置页面"""

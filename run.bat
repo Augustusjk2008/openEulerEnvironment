@@ -12,7 +12,7 @@ if "%~1"=="dev" (
 
 if "%~1"=="build" (
     echo Building executable...
-    pyinstaller --noconsole --onefile .\src\main.py --name=openEulerManage.exe
+    pyinstaller --noconsole --onefile --paths=src .\src\main.py --name=openEulerManage.exe
     goto :eof
 )
 
@@ -26,27 +26,36 @@ if "%~1"=="install" (
     goto :eof
 )
 
+if "%~1"=="pack" (
+    echo Packaging...
+    powershell -ExecutionPolicy Bypass -File "H:\Resources\RTLinux\Environment\back_and_pack.ps1"
+    goto :eof
+)
+
 if "%~1"=="all" (
-    echo [1/2] Building executable...
-    pyinstaller --noconsole --onefile .\src\main.py --name=openEulerManage.exe
+    echo [1/3] Building executable...
+    pyinstaller --noconsole --onefile --paths=src .\src\main.py --name=openEulerManage.exe
     if errorlevel 1 (
         echo [ERROR] Build failed.
         exit /b 1
     )
-    echo [2/2] Installing executable...
+    echo [2/3] Installing executable...
     copy /y "dist\openEulerManage.exe" "H:\Resources\RTLinux\Environment\"
+    echo [3/3] Packaging...
+    powershell -ExecutionPolicy Bypass -File "H:\Resources\RTLinux\Environment\back_and_pack.ps1"
     echo Done.
     goto :eof
 )
 
 :help
-echo Usage: %~nx0 [dev^|build^|install^|all^|help]
+echo Usage: %~nx0 [dev^|build^|install^|pack^|all^|help]
 echo.
 echo Commands:
 echo   dev     - Run the application in development mode
 echo   build   - Build the application into an executable
 echo   install - Copy the built executable to the resource directory
-echo   all     - Build and then install
+echo   pack    - Run the backup and packaging script
+echo   all     - Build and install and pack
 echo   help    - Show this help message
 echo.
 echo [Environment Tip]

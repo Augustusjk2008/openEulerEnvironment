@@ -5,6 +5,7 @@
 PyQt5==5.15.9
 qfluentwidgets
 paramiko==3.3.1
+matplotlib
 
 # 终端功能支持（可选）
 pyte
