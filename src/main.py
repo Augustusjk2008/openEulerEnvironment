@@ -1,3 +1,4 @@
+import argparse
 import os
 import sys
 from PyQt5.QtWidgets import QApplication
@@ -9,8 +10,18 @@ if src_dir not in sys.path:
 
 from core.config_manager import get_config_manager, set_program_dir_override
 from core.font_manager import FontManager
-from ui.main_window import MainWindow, _parse_args
 from ui.interfaces.login_interface import LoginWindow
+from ui.loading_dialog import LoadingDialog
+
+def _parse_args(argv):
+    parser = argparse.ArgumentParser(description="RTopenEuler 系统管理工具")
+    parser.add_argument("-d", "--dir", dest="program_dir", help="指定程序资源目录")
+    parser.add_argument("--skip-login", action="store_true", help="跳过登录界面直接进入主页")
+    return parser.parse_known_args(argv)
+
+def _create_main_window(progress_callback=None):
+    from ui.main_window import MainWindow
+    return MainWindow(progress_callback=progress_callback)
 
 def main():
     args, qt_args = _parse_args(sys.argv[1:])
@@ -29,19 +40,32 @@ def main():
     FontManager.apply_global_font(font_size_name)
 
     main_holder = {}
+
+    def _start_main_window():
+        loading_dialog = LoadingDialog()
+        loading_dialog.set_progress(0, "正在初始化主窗口...")
+        loading_dialog.show()
+        QApplication.processEvents()
+
+        def _update_progress(value, text=None):
+            loading_dialog.set_progress(value, text)
+            QApplication.processEvents()
+
+        main_holder["window"] = _create_main_window(_update_progress)
+        main_holder["window"].show()
+        loading_dialog.close()
+        main_holder["loading"] = loading_dialog
     
     if args.skip_login:
         # 如果指定了跳过登录，直接创建并显示主窗口
-        main_holder["window"] = MainWindow()
-        main_holder["window"].show()
+        _start_main_window()
     else:
         # 否则显示登录界面
         login_window = LoginWindow()
         
         def _on_login_success(_username):
-            main_holder["window"] = MainWindow()
-            main_holder["window"].show()
             login_window.close()
+            _start_main_window()
             
         login_window.login_success.connect(_on_login_success)
         login_window.show()

@@ -1,12 +1,9 @@
-import argparse
 import os
-import sys
 import warnings
 from PyQt5.QtWidgets import QApplication
-from PyQt5.QtCore import QSize, Qt
-from PyQt5.QtGui import QIcon, QFont
+from PyQt5.QtGui import QIcon
 from qfluentwidgets import FluentWindow, NavigationItemPosition, FluentIcon
-from core.config_manager import get_config_manager, set_program_dir_override, get_program_dir
+from core.config_manager import get_config_manager, get_program_dir
 from core.font_manager import FontManager
 
 # 导入自定义界面
@@ -19,7 +16,6 @@ from ui.interfaces.tutorial_interface import TutorialInterface
 from ui.interfaces.terminal_interface import TerminalInterface
 from ui.interfaces.ftp_interface import FtpInterface
 from ui.interfaces.data_visualization_interface import DataVisualizationInterface
-from ui.interfaces.login_interface import LoginWindow
 
 warnings.filterwarnings(
     "ignore",
@@ -27,38 +23,51 @@ warnings.filterwarnings(
     category=DeprecationWarning
 )
 
-def _parse_args(argv):
-    parser = argparse.ArgumentParser(description="RTopenEuler 系统管理工具")
-    parser.add_argument("-d", "--dir", dest="program_dir", help="指定程序资源目录")
-    parser.add_argument("--skip-login", action="store_true", help="跳过登录界面直接进入主页")
-    return parser.parse_known_args(argv)
-
 class MainWindow(FluentWindow):
-    def __init__(self):
+    def __init__(self, progress_callback=None):
         super().__init__()
+        self._progress_callback = progress_callback
 
         # 加载配置
+        self._emit_progress(5, "加载配置...")
         self.config_manager = get_config_manager()
 
         # 初始化界面
+        self._emit_progress(12, "加载首页...")
         self.homeInterface = HomeInterface(self)
+        self._emit_progress(22, "加载环境配置...")
         self.environmentInstallInterface = EnvironmentInstallInterface(self)
+        self._emit_progress(32, "加载系统初始化...")
         self.initializerInterface = InitializerInterface(self)
+        self._emit_progress(42, "加载代码生成...")
         self.codeGenerationInterface = CodeGenerationInterface(self)
+        self._emit_progress(52, "加载教程文档...")
         self.tutorialInterface = TutorialInterface(self)
+        self._emit_progress(62, "加载远程终端...")
         self.terminalInterface = TerminalInterface(self)
+        self._emit_progress(72, "加载 FTP 客户端...")
         self.ftpInterface = FtpInterface(self)
+        self._emit_progress(80, "加载数据可视化...")
         self.dataVisualizationInterface = DataVisualizationInterface(self)
+        self._emit_progress(88, "加载设置...")
         self.settingsInterface = SettingsInterface(self)
 
         # 连接设置界面信号
         self.settingsInterface.config_changed.connect(self._on_config_changed)
 
+        self._emit_progress(92, "构建导航...")
         self.init_navigation()
+        self._emit_progress(96, "初始化窗口...")
         self.init_window()
 
         # 所有界面创建完成后，强制应用字体到所有组件
+        self._emit_progress(98, "应用字体...")
         FontManager.apply_font_to_widget(self)
+        self._emit_progress(100, "初始化完成")
+
+    def _emit_progress(self, value, text=None):
+        if self._progress_callback:
+            self._progress_callback(value, text)
 
     def init_window(self):
         self.resize(1700, 1050)
