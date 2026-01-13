@@ -15,9 +15,10 @@ from core.config_manager import get_program_dir
 
 
 class LoadingDialog(QDialog):
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, image_name="loading.png"):
         super().__init__(parent)
         self._source = None
+        self._image_name = image_name
 
         self.setWindowFlags(Qt.Dialog | Qt.FramelessWindowHint)
         self.setWindowModality(Qt.ApplicationModal)
@@ -60,7 +61,7 @@ class LoadingDialog(QDialog):
             self.setWindowIcon(QIcon(icon_path))
 
     def _load_image(self):
-        image_path = os.path.join(get_program_dir(), "assets", "loading.png")
+        image_path = os.path.join(get_program_dir(), "assets", self._image_name)
         if os.path.exists(image_path):
             pixmap = QPixmap(image_path)
             if not pixmap.isNull():

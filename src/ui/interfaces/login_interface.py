@@ -3,8 +3,8 @@ Login/Register window shown before the main app.
 """
 
 import os
-from PyQt5.QtCore import Qt, pyqtSignal
-from PyQt5.QtGui import QFont, QPixmap, QIcon
+from PyQt5.QtCore import Qt, pyqtSignal, QTimer
+from PyQt5.QtGui import QPixmap, QIcon
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout, QStackedWidget,
     QLabel, QSizePolicy
@@ -22,8 +22,14 @@ from core.font_manager import FontManager
 class LoginWindow(QWidget):
     login_success = pyqtSignal(str)
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, defer_heavy=False):
         super().__init__(parent)
+        self._defer_heavy = defer_heavy
+        self._hero_image_label = None
+        self._hero_image_loaded = False
+        self._register_form_ready = False
+        self._register_index = None
+
         self.auth_manager = AuthManager()
         self.setWindowTitle("RTopenEuler 登录")
         self.setFixedSize(1120, 680)
@@ -41,6 +47,8 @@ class LoginWindow(QWidget):
         self._init_ui()
         self._set_mode("login")
         self._center_window()
+        if self._defer_heavy:
+            QTimer.singleShot(0, self._load_hero_image)
 
     def _center_window(self):
         desktop = QApplication.desktop().availableGeometry()
@@ -80,14 +88,9 @@ class LoginWindow(QWidget):
         layout.addWidget(highlight)
 
         image_label = HeroImageLabel()
-        image_path = os.path.join(get_program_dir(), "assets", "login_hero.png")
-        if os.path.exists(image_path):
-            pixmap = QPixmap(image_path)
-            if not pixmap.isNull():
-                image_label.set_source(pixmap)
-        else:
-            image_label.setText("此处可放置一张更具冲击力的项目主视觉图")
-            image_label.setStyleSheet("color: rgba(0, 0, 0, 0.45);")
+        self._hero_image_label = image_label
+        if not self._defer_heavy:
+            self._load_hero_image()
         layout.addWidget(image_label, 1)
 
         tip = CaptionLabel("首次使用请先注册，邀请码请联系管理员获取。")
@@ -141,7 +144,9 @@ class LoginWindow(QWidget):
 
         self.stack = QStackedWidget()
         self.stack.addWidget(self._create_login_form())
-        self.stack.addWidget(self._create_register_form())
+        if not self._defer_heavy:
+            self._register_index = self.stack.addWidget(self._create_register_form())
+            self._register_form_ready = True
         layout.addWidget(self.stack, 1)
 
         return panel
@@ -224,13 +229,35 @@ class LoginWindow(QWidget):
             self.login_tab_btn.setProperty("active", True)
             self.register_tab_btn.setProperty("active", False)
         else:
-            self.stack.setCurrentIndex(1)
+            self._ensure_register_form()
+            if self._register_index is not None:
+                self.stack.setCurrentIndex(self._register_index)
             self.login_tab_btn.setProperty("active", False)
             self.register_tab_btn.setProperty("active", True)
         self.login_tab_btn.style().unpolish(self.login_tab_btn)
         self.login_tab_btn.style().polish(self.login_tab_btn)
         self.register_tab_btn.style().unpolish(self.register_tab_btn)
         self.register_tab_btn.style().polish(self.register_tab_btn)
+
+    def _ensure_register_form(self):
+        if self._register_form_ready:
+            return
+        self._register_index = self.stack.addWidget(self._create_register_form())
+        self._register_form_ready = True
+
+    def _load_hero_image(self):
+        if self._hero_image_loaded or self._hero_image_label is None:
+            return
+        image_path = os.path.join(get_program_dir(), "assets", "login_hero.png")
+        if os.path.exists(image_path):
+            pixmap = QPixmap(image_path)
+            if not pixmap.isNull():
+                self._hero_image_label.set_source(pixmap)
+                self._hero_image_loaded = True
+                return
+        self._hero_image_label.setText("此处可放置一张更具冲击力的项目主视觉图")
+        self._hero_image_label.setStyleSheet("color: rgba(0, 0, 0, 0.45);")
+        self._hero_image_loaded = True
 
     def _handle_login(self):
         username = self.login_user.text().strip()

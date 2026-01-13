@@ -54,6 +54,10 @@ class MainWindow(FluentWindow):
 
         # 连接设置界面信号
         self.settingsInterface.config_changed.connect(self._on_config_changed)
+        self.ftpInterface.connection_changed.connect(
+            self.dataVisualizationInterface.set_ftp_connected
+        )
+        self.dataVisualizationInterface.set_ftp_connected(self.ftpInterface.sftp is not None)
 
         self._emit_progress(92, "构建导航...")
         self.init_navigation()

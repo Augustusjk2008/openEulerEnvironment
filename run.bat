@@ -4,6 +4,12 @@ setlocal
 if "%~1"=="" goto help
 if "%~1"=="help" goto help
 
+if "%~1"=="simple" (
+    echo Starting in development mode...
+    python src/main.py -d H:\Resources\RTLinux\Environment
+    goto :eof
+)
+
 if "%~1"=="dev" (
     echo Starting in development mode...
     python src/main.py -d H:\Resources\RTLinux\Environment --skip-login
@@ -48,10 +54,11 @@ if "%~1"=="all" (
 )
 
 :help
-echo Usage: %~nx0 [dev^|build^|install^|pack^|all^|help]
+echo Usage: %~nx0 [dev^|simple^|build^|install^|pack^|all^|help]
 echo.
 echo Commands:
 echo   dev     - Run the application in development mode
+echo   simple  - Run the application in simple mode
 echo   build   - Build the application into an executable
 echo   install - Copy the built executable to the resource directory
 echo   pack    - Run the backup and packaging script

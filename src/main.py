@@ -2,6 +2,7 @@ import argparse
 import os
 import sys
 from PyQt5.QtWidgets import QApplication
+from PyQt5.QtCore import QTimer
 
 # 将 src 目录添加到 sys.path 以支持绝对导入
 src_dir = os.path.dirname(os.path.abspath(__file__))
@@ -10,7 +11,6 @@ if src_dir not in sys.path:
 
 from core.config_manager import get_config_manager, set_program_dir_override
 from core.font_manager import FontManager
-from ui.interfaces.login_interface import LoginWindow
 from ui.loading_dialog import LoadingDialog
 
 def _parse_args(argv):
@@ -23,6 +23,10 @@ def _create_main_window(progress_callback=None):
     from ui.main_window import MainWindow
     return MainWindow(progress_callback=progress_callback)
 
+def _create_login_window(defer_heavy=False):
+    from ui.interfaces.login_interface import LoginWindow
+    return LoginWindow(defer_heavy=defer_heavy)
+
 def main():
     args, qt_args = _parse_args(sys.argv[1:])
     if args.program_dir:
@@ -33,11 +37,6 @@ def main():
         set_program_dir_override(program_dir)
 
     app = QApplication([sys.argv[0]] + qt_args)
-
-    # 在创建窗口之前，先加载配置并应用全局字体
-    config_manager = get_config_manager()
-    font_size_name = config_manager.get("font_size", "small")
-    FontManager.apply_global_font(font_size_name)
 
     main_holder = {}
 
@@ -55,22 +54,31 @@ def main():
         main_holder["window"].show()
         loading_dialog.close()
         main_holder["loading"] = loading_dialog
+
+    def _bootstrap():
+        config_manager = get_config_manager()
+        font_size_name = config_manager.get("font_size", "small")
+        FontManager.set_size(font_size_name)
     
-    if args.skip_login:
-        # 如果指定了跳过登录，直接创建并显示主窗口
-        _start_main_window()
-    else:
-        # 否则显示登录界面
-        login_window = LoginWindow()
-        
+        if args.skip_login:
+            FontManager.apply_global_font(font_size_name)
+            _start_main_window()
+            return
+
+        login_window = _create_login_window(defer_heavy=True)
+
         def _on_login_success(_username):
             login_window.close()
             _start_main_window()
-            
+
         login_window.login_success.connect(_on_login_success)
         login_window.show()
-        # 保持引用以防被垃圾回收
+        QApplication.processEvents()
         main_holder["login"] = login_window
+
+        QTimer.singleShot(0, lambda: FontManager.apply_global_font(font_size_name))
+
+    QTimer.singleShot(0, _bootstrap)
         
     sys.exit(app.exec_())
 

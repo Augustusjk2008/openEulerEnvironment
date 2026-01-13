@@ -187,6 +187,7 @@ class TransferWorker(QThread):
 
 class FtpInterface(QWidget):
     """FTP 客户端界面"""
+    connection_changed = pyqtSignal(bool)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -596,6 +597,7 @@ class FtpInterface(QWidget):
         self.status_label.setStyleSheet(f"color: #107C10; font-size: {FontManager.get_font_size('caption')}px;")
         self._set_remote_controls_enabled(True)
         self._refresh_remote_list()
+        self.connection_changed.emit(True)
 
     def _on_connect_failed(self, message):
         self.status_label.setText("FTP 连接失败")
@@ -622,6 +624,7 @@ class FtpInterface(QWidget):
         self.status_label.setStyleSheet(f"color: #D83B01; font-size: {FontManager.get_font_size('caption')}px;")
         self._clear_table(self.remote_table)
         self._set_remote_controls_enabled(False)
+        self.connection_changed.emit(False)
 
     def _normalize_remote_path(self, path):
         if not path:
