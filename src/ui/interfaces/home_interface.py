@@ -202,14 +202,24 @@ class FunctionArea(QWidget):
             color="#0078A8"
         )
 
+        # 卡片 8：协议编辑（灰蓝色）
+        self.card8 = FunctionCard(
+            icon=FIF.LIBRARY,
+            title="协议建模",
+            description="编辑协议结构并生成 pack/unpack 与序列化代码",
+            button_text="打开编辑器",
+            color="#4C6A92"
+        )
+
         # 添加卡片到网格（4列2行）
         grid_layout.addWidget(self.card1, 0, 0)
         grid_layout.addWidget(self.card2, 0, 1)
         grid_layout.addWidget(self.card5, 0, 2)
         grid_layout.addWidget(self.card6, 0, 3)
         grid_layout.addWidget(self.card7, 1, 0)
-        grid_layout.addWidget(self.card3, 1, 1)
-        grid_layout.addWidget(self.card4, 1, 2)
+        grid_layout.addWidget(self.card8, 1, 1)
+        grid_layout.addWidget(self.card3, 1, 2)
+        grid_layout.addWidget(self.card4, 1, 3)
 
         # 居中对齐网格
         grid_layout.setColumnStretch(0, 1)
@@ -296,6 +306,7 @@ class HomeInterface(QWidget):
     switch_to_terminal = pyqtSignal()
     switch_to_ftp = pyqtSignal()
     switch_to_data_visualization = pyqtSignal()
+    switch_to_protocol_editor = pyqtSignal()
     switch_to_settings = pyqtSignal()
 
     def __init__(self, parent=None):
@@ -392,6 +403,7 @@ class HomeInterface(QWidget):
         self.function_area.card5.button.clicked.connect(self._on_terminal_clicked)
         self.function_area.card6.button.clicked.connect(self._on_ftp_clicked)
         self.function_area.card7.button.clicked.connect(self._on_data_visualization_clicked)
+        self.function_area.card8.button.clicked.connect(self._on_protocol_editor_clicked)
 
     def _on_env_config_clicked(self):
         """开发环境配置按钮点击事件 - 跳转到环境配置页面"""
@@ -420,3 +432,7 @@ class HomeInterface(QWidget):
     def _on_terminal_clicked(self):
         """远程终端按钮点击事件 - 跳转到终端页面"""
         self.switch_to_terminal.emit()
+
+    def _on_protocol_editor_clicked(self):
+        """协议编辑按钮点击事件 - 跳转到协议编辑页面"""
+        self.switch_to_protocol_editor.emit()

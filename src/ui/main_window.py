@@ -16,6 +16,7 @@ from ui.interfaces.tutorial_interface import TutorialInterface
 from ui.interfaces.terminal_interface import TerminalInterface
 from ui.interfaces.ftp_interface import FtpInterface
 from ui.interfaces.data_visualization_interface import DataVisualizationInterface
+from ui.interfaces.protocol_editor_interface import ProtocolEditorInterface
 
 warnings.filterwarnings(
     "ignore",
@@ -49,6 +50,8 @@ class MainWindow(FluentWindow):
         self.ftpInterface = FtpInterface(self)
         self._emit_progress(80, "加载数据可视化...")
         self.dataVisualizationInterface = DataVisualizationInterface(self)
+        self._emit_progress(84, "加载协议编辑...")
+        self.protocolEditorInterface = ProtocolEditorInterface(self)
         self._emit_progress(88, "加载设置...")
         self.settingsInterface = SettingsInterface(self)
 
@@ -100,6 +103,11 @@ class MainWindow(FluentWindow):
             FluentIcon.PIE_SINGLE,
             '数据可视化'
         )
+        self.protocol_editor_key = self.addSubInterface(
+            self.protocolEditorInterface,
+            FluentIcon.LIBRARY,
+            '协议编辑'
+        )
         self.initializer_key = self.addSubInterface(self.initializerInterface, FluentIcon.SYNC, '系统初始化')
         self.tutorial_key = self.addSubInterface(self.tutorialInterface, FluentIcon.HELP, '教程文档')
 
@@ -114,6 +122,7 @@ class MainWindow(FluentWindow):
         self.homeInterface.switch_to_terminal.connect(self._switch_to_terminal_page)
         self.homeInterface.switch_to_ftp.connect(self._switch_to_ftp_page)
         self.homeInterface.switch_to_data_visualization.connect(self._switch_to_data_visualization_page)
+        self.homeInterface.switch_to_protocol_editor.connect(self._switch_to_protocol_editor_page)
         self.homeInterface.switch_to_settings.connect(self._switch_to_settings_page)
 
     def _switch_to_environment_page(self):
@@ -144,6 +153,10 @@ class MainWindow(FluentWindow):
     def _switch_to_data_visualization_page(self):
         """切换到数据可视化页面"""
         self.switchTo(self.dataVisualizationInterface)
+
+    def _switch_to_protocol_editor_page(self):
+        """切换到协议编辑页面"""
+        self.switchTo(self.protocolEditorInterface)
 
     def _switch_to_settings_page(self):
         """切换到设置页面"""
