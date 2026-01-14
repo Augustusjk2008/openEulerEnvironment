@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Optional
 
 from PyQt5.QtCore import Qt, QSize, QPoint
+from PyQt5.QtGui import QColor, QBrush
 from PyQt5.QtWidgets import (
     QWidget,
     QVBoxLayout,
@@ -39,6 +40,8 @@ from core.font_manager import FontManager
 from core.protocol_schema import (
     FieldSpec,
     compute_byte_positions,
+    compute_bit_positions,
+    compute_bit_group_info,
     load_csv,
     save_csv,
     generate_cpp_code,
@@ -272,6 +275,11 @@ class ProtocolEditorInterface(QWidget):
         gen_btn.clicked.connect(self._generate_code)
         btn_layout.addWidget(gen_btn)
 
+        export_btn = PushButton("导出 Word")
+        export_btn.setFixedHeight(32)
+        export_btn.clicked.connect(self._export_word)
+        btn_layout.addWidget(export_btn)
+
         layout.addLayout(btn_layout)
         return card
 
@@ -393,6 +401,7 @@ class ProtocolEditorInterface(QWidget):
         self.table.setItem(row, 7, valid_item)
         field_type = type_combo.currentData() if type_combo else "U8"
         self._set_valid_state_for_type(row, field_type)
+        self._apply_row_style(row, field_type)
         if field is None:
             self._on_type_changed(row)
 
@@ -407,6 +416,8 @@ class ProtocolEditorInterface(QWidget):
             type_combo = self.table.cellWidget(row, 2)
             if type_combo:
                 type_combo.setProperty("row", row)
+            field_type = type_combo.currentData() if type_combo else "U8"
+            self._apply_row_style(row, field_type)
 
     def _row_from_widget(self, widget):
         if widget is None:
@@ -437,6 +448,19 @@ class ProtocolEditorInterface(QWidget):
             valid_item.setCheckState(Qt.Checked)
             return
         valid_item.setFlags(Qt.ItemIsEnabled | Qt.ItemIsUserCheckable | Qt.ItemIsSelectable)
+
+    def _apply_row_style(self, row, field_type):
+        highlight = QBrush(QColor("#E6F7F7")) if field_type == "BIT" else QBrush()
+        for col in range(self.table.columnCount()):
+            item = self.table.item(row, col)
+            if item:
+                item.setBackground(highlight)
+        type_combo = self.table.cellWidget(row, 2)
+        if type_combo:
+            if field_type == "BIT":
+                type_combo.setStyleSheet("QComboBox { background-color: #E6F7F7; }")
+            else:
+                type_combo.setStyleSheet("")
 
     def _on_item_changed(self, item):
         if item.column() == 1:
@@ -708,3 +732,135 @@ class ProtocolEditorInterface(QWidget):
             f.write(code)
         InfoBar.success("生成成功", f"已生成: {header_name}", duration=2500, parent=self.window())
         self._refresh_list()
+
+    def _export_word(self):
+        if not self.current_file:
+            InfoBar.warning("提示", "请先选择协议文件", duration=2000, parent=self.window())
+            return
+        try:
+            from docx import Document
+            from docx.oxml.ns import qn
+        except ImportError:
+            InfoBar.warning("提示", "请先安装 python-docx", duration=2500, parent=self.window())
+            return
+        fields = self._collect_fields()
+        if not fields:
+            InfoBar.warning("提示", "没有可导出的数据", duration=2000, parent=self.window())
+            return
+        default_name = Path(self.current_file).stem + ".docx"
+        default_path = os.path.join(self.current_dir or os.path.expanduser("~"), default_name)
+        save_path, _ = QFileDialog.getSaveFileName(
+            self, "保存 Word", default_path, "Word Document (*.docx)"
+        )
+        if not save_path:
+            return
+        if not save_path.lower().endswith(".docx"):
+            save_path += ".docx"
+
+        type_map = {value: display for display, value in TYPE_DISPLAY}
+        byte_positions = compute_byte_positions(fields)
+        bit_positions = compute_bit_positions(fields)
+        group_by_index, group_info = compute_bit_group_info(fields)
+
+        def format_byte_position(value):
+            if not value:
+                return ""
+            return value.replace("B", "")
+
+        def format_bit_position(value):
+            if not value:
+                return ""
+            if "-" in value:
+                return value
+            return f"{value}-{value}"
+
+        doc = Document()
+        normal_style = doc.styles["Normal"]
+        normal_style.font.name = "Microsoft YaHei"
+        normal_style._element.rPr.rFonts.set(qn("w:eastAsia"), "Microsoft YaHei")
+
+        def set_cell_text(cell, text):
+            cell.text = text
+            for paragraph in cell.paragraphs:
+                for run in paragraph.runs:
+                    run.font.name = "Microsoft YaHei"
+                    run._element.rPr.rFonts.set(qn("w:eastAsia"), "Microsoft YaHei")
+
+        table = doc.add_table(rows=1, cols=7)
+        table.style = "Table Grid"
+        headers = ["序号", "字节序", "长度", "说明", "LSB", "默认值", "位序"]
+        for idx, text in enumerate(headers):
+            set_cell_text(table.cell(0, idx), text)
+
+        group_rows: Dict[str, List[int]] = {}
+        group_seq: Dict[str, int] = {}
+        display_seq = 1
+        for i, field in enumerate(fields):
+            group_key = group_by_index.get(i)
+            row = table.add_row().cells
+            if group_key:
+                group_rows.setdefault(group_key, []).append(len(table.rows) - 1)
+            if group_key:
+                if group_key not in group_seq:
+                    group_seq[group_key] = display_seq
+                    display_seq += 1
+                set_cell_text(row[0], "")
+            else:
+                set_cell_text(row[0], str(display_seq))
+                display_seq += 1
+            byte_pos = format_byte_position(byte_positions[i] if i < len(byte_positions) else "")
+            set_cell_text(row[1], byte_pos)
+            if field.field_type == "BIT":
+                length_text = f"{field.length}位" if field.length else ""
+            else:
+                length_value = field.length if field.length else self._default_length_for_type(field.field_type)
+                length_text = f"{length_value}字节" if length_value else ""
+            set_cell_text(row[2], length_text)
+            type_text = type_map.get(field.field_type, field.field_type)
+            desc = f"{field.name_cn or ''}，{type_text}" if (field.name_cn or type_text) else ""
+            set_cell_text(row[3], desc)
+            set_cell_text(row[4], "" if field.lsb is None else str(field.lsb))
+            set_cell_text(row[5], "" if field.default is None else str(field.default))
+            set_cell_text(row[6], format_bit_position(bit_positions[i] if (i < len(bit_positions) and field.field_type == "BIT") else ""))
+
+            if group_key:
+                info = group_info.get(group_key, {})
+                indices = info.get("indices", [])
+                if indices and i == indices[-1]:
+                    total_bits = int(info.get("total_bits", 0))
+                    container_bits = int(info.get("container_bits", 0))
+                    remaining = container_bits - total_bits
+                    if remaining > 0:
+                        reserve_row = table.add_row().cells
+                        group_rows[group_key].append(len(table.rows) - 1)
+                        set_cell_text(reserve_row[0], "")
+                        set_cell_text(reserve_row[1], byte_pos)
+                        set_cell_text(reserve_row[2], f"{remaining}位")
+                        reserve_desc = f"预留，{type_map.get('BIT', 'BIT')}"
+                        set_cell_text(reserve_row[3], reserve_desc)
+                        set_cell_text(reserve_row[4], "")
+                        set_cell_text(reserve_row[5], "")
+                        start_bit = total_bits + 1
+                        end_bit = container_bits
+                        set_cell_text(reserve_row[6], f"{start_bit}-{end_bit}")
+
+        for group_key, rows in group_rows.items():
+            if len(rows) <= 1:
+                continue
+            info = group_info.get(group_key, {})
+            indices = info.get("indices", [])
+            if not indices:
+                continue
+            seq_text = str(group_seq.get(group_key, indices[0] + 1))
+            byte_text = format_byte_position(byte_positions[indices[0]] if indices[0] < len(byte_positions) else "")
+            seq_cell = table.cell(rows[0], 0).merge(table.cell(rows[-1], 0))
+            set_cell_text(seq_cell, seq_text)
+            byte_cell = table.cell(rows[0], 1).merge(table.cell(rows[-1], 1))
+            set_cell_text(byte_cell, byte_text)
+
+        try:
+            doc.save(save_path)
+        except OSError:
+            InfoBar.warning("提示", "保存失败，请检查路径或权限", duration=2500, parent=self.window())
+            return
+        InfoBar.success("导出成功", f"已保存: {os.path.basename(save_path)}", duration=2500, parent=self.window())

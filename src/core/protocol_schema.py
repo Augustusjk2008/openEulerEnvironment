@@ -397,6 +397,43 @@ def compute_byte_positions(fields: List[FieldSpec]) -> List[str]:
     return positions
 
 
+def compute_bit_positions(fields: List[FieldSpec]) -> List[str]:
+    metas, _, _ = _build_layout(fields)
+    positions = [""] * len(metas)
+    for idx, meta in enumerate(metas):
+        if meta.spec.field_type != "BIT":
+            continue
+        bit_len = max(meta.spec.length, 0)
+        if bit_len <= 0:
+            continue
+        start = meta.bit_offset + 1
+        end = meta.bit_offset + bit_len
+        positions[idx] = f"{start}" if bit_len == 1 else f"{start}-{end}"
+    return positions
+
+
+def compute_bit_group_info(fields: List[FieldSpec]) -> Tuple[Dict[int, str], Dict[str, Dict[str, object]]]:
+    metas, bit_groups, _ = _build_layout(fields)
+    index_map = {id(meta): idx for idx, meta in enumerate(metas)}
+    group_by_index: Dict[int, str] = {}
+    group_info: Dict[str, Dict[str, object]] = {}
+    for group in bit_groups:
+        indices = []
+        for meta in group.fields:
+            idx = index_map.get(id(meta))
+            if idx is None:
+                continue
+            indices.append(idx)
+            group_by_index[idx] = group.member_name
+        indices.sort()
+        group_info[group.member_name] = {
+            "indices": indices,
+            "total_bits": group.total_bits,
+            "container_bits": group.container_bits,
+        }
+    return group_by_index, group_info
+
+
 def _compute_frame_offsets(metas: List[FieldMeta], bit_groups: List[BitGroup]) -> int:
     frame_offset = 0
     processed_groups = set()
@@ -422,6 +459,8 @@ def _compute_frame_offsets(metas: List[FieldMeta], bit_groups: List[BitGroup]) -
 def _collect_arrays(metas: List[FieldMeta]) -> Dict[str, ArrayGroup]:
     arrays: Dict[str, ArrayGroup] = {}
     for meta in metas:
+        if meta.spec.field_type == "BIT":
+            continue
         if meta.array_ref is None:
             continue
         base = meta.array_ref.base
@@ -451,8 +490,55 @@ def _collect_arrays(metas: List[FieldMeta]) -> Dict[str, ArrayGroup]:
     return arrays
 
 
+def _assign_implicit_arrays(metas: List[FieldMeta]) -> None:
+    index = 0
+    total = len(metas)
+    while index < total:
+        meta = metas[index]
+        spec = meta.spec
+        if spec.field_type == "BIT":
+            index += 1
+            continue
+        if meta.array_ref is not None:
+            index += 1
+            continue
+        name_en = spec.name_en.strip()
+        if not name_en:
+            index += 1
+            continue
+        name_key = name_en
+        length_key = _field_byte_length(spec)
+        if not name_key:
+            index += 1
+            continue
+        next_index = index + 1
+        while next_index < total:
+            other = metas[next_index]
+            other_spec = other.spec
+            if other.array_ref is not None:
+                break
+            other_name = other_spec.name_en.strip()
+            if not other_name:
+                break
+            if other_spec.field_type != spec.field_type:
+                break
+            if other_name != name_key:
+                break
+            if _field_byte_length(other_spec) != length_key:
+                break
+            if other_spec.lsb != spec.lsb:
+                break
+            next_index += 1
+        if next_index - index > 1:
+            base = normalize_identifier(name_key)
+            for offset in range(index, next_index):
+                metas[offset].array_ref = ArrayRef(base=base, index=offset - index, field=None)
+        index = next_index
+
+
 def generate_cpp_code(frame_name: str, fields: List[FieldSpec]) -> str:
     metas, bit_groups, frame_size = _build_layout(fields)
+    _assign_implicit_arrays(metas)
     frame_size = _compute_frame_offsets(metas, bit_groups)
     arrays = _collect_arrays(metas)
     array_field_specs: Dict[str, Dict[str, FieldSpec]] = {}
@@ -503,6 +589,184 @@ def generate_cpp_code(frame_name: str, fields: List[FieldSpec]) -> str:
                 return f"{ref.base}[{ref.index}].{normalize_identifier(ref.field)}"
             return f"{ref.base}[{ref.index}]"
         return normalize_identifier(spec.name_en)
+
+    def build_value_expr(meta: FieldMeta, index_expr: Optional[str] = None) -> str:
+        spec = meta.spec
+        if meta.array_ref is not None:
+            ref = meta.array_ref
+            idx = index_expr if index_expr is not None else ref.index
+            if ref.field:
+                return f"frame.{ref.base}[{idx}].{normalize_identifier(ref.field)}"
+            return f"frame.{ref.base}[{idx}]"
+        return f"frame.{normalize_identifier(spec.name_en)}"
+
+    def build_target_expr(meta: FieldMeta, index_expr: Optional[str] = None) -> str:
+        spec = meta.spec
+        if spec.field_type == "BIT":
+            group = next((g for g in bit_groups if meta in g.fields), None)
+            if group is None:
+                return ""
+            _, field_name = split_group_name(spec.name_en)
+            if meta.array_ref is not None:
+                idx = index_expr if index_expr is not None else meta.array_ref.index
+                return f"frame.{group.member_name}.{meta.array_ref.base}[{idx}]"
+            return f"frame.{group.member_name}.{normalize_identifier(field_name)}"
+        if meta.array_ref is not None:
+            ref = meta.array_ref
+            idx = index_expr if index_expr is not None else ref.index
+            if ref.field:
+                return f"frame.{ref.base}[{idx}].{normalize_identifier(ref.field)}"
+            return f"frame.{ref.base}[{idx}]"
+        return f"frame.{normalize_identifier(spec.name_en)}"
+
+    def collect_array_run(start_idx: int) -> Optional[Tuple[int, int, int, int]]:
+        meta = metas[start_idx]
+        spec = meta.spec
+        if spec.field_type == "BIT":
+            return None
+        if not spec.is_valid:
+            return None
+        if meta.array_ref is None or meta.frame_offset is None:
+            return None
+        stride = _field_byte_length(spec)
+        if stride <= 0:
+            return None
+        base = meta.array_ref.base
+        field = meta.array_ref.field
+        start_index = meta.array_ref.index
+        start_offset = meta.frame_offset
+        lsb = spec.lsb
+        count = 1
+        for next_idx in range(start_idx + 1, len(metas)):
+            other = metas[next_idx]
+            other_spec = other.spec
+            if other_spec.field_type == "BIT":
+                break
+            if not other_spec.is_valid:
+                break
+            if other.array_ref is None or other.frame_offset is None:
+                break
+            if other.array_ref.base != base or other.array_ref.field != field:
+                break
+            if other_spec.field_type != spec.field_type:
+                break
+            if _field_byte_length(other_spec) != stride:
+                break
+            if other_spec.lsb != lsb:
+                break
+            if other.array_ref.index != start_index + count:
+                break
+            if other.frame_offset != start_offset + stride * count:
+                break
+            count += 1
+        if count < 2:
+            return None
+        return count, start_index, start_offset, stride
+
+    def emit_pack(lines: List[str], spec: FieldSpec, value_expr: str, offset_expr: str, indent: str = "        ") -> None:
+        if spec.field_type in ("CONST", "ANY", "U8", "S8"):
+            lines.append(f"{indent}buffer[{offset_expr}] = static_cast<char>({value_expr});")
+        elif spec.field_type in ("U16", "S16"):
+            lines.append(f"{indent}writeLe16(buffer.data() + {offset_expr}, static_cast<uint16_t>({value_expr}));")
+        elif spec.field_type in ("U32", "S32"):
+            lines.append(f"{indent}writeLe32(buffer.data() + {offset_expr}, static_cast<uint32_t>({value_expr}));")
+        elif spec.field_type in ("U8F", "U16F", "U32F"):
+            lsb = spec.lsb if spec.lsb is not None else 1.0
+            encoded = f"encodeUnsigned({value_expr}, {_format_float_literal(lsb)})"
+            if spec.field_type == "U8F":
+                lines.append(f"{indent}buffer[{offset_expr}] = static_cast<char>(static_cast<uint8_t>({encoded}));")
+            elif spec.field_type == "U16F":
+                lines.append(f"{indent}writeLe16(buffer.data() + {offset_expr}, static_cast<uint16_t>({encoded}));")
+            else:
+                lines.append(f"{indent}writeLe32(buffer.data() + {offset_expr}, static_cast<uint32_t>({encoded}));")
+        elif spec.field_type in ("S8F", "S16F", "S32F"):
+            lsb = spec.lsb if spec.lsb is not None else 1.0
+            encoded = f"encodeSigned({value_expr}, {_format_float_literal(lsb)})"
+            if spec.field_type == "S8F":
+                lines.append(f"{indent}buffer[{offset_expr}] = static_cast<char>(static_cast<int8_t>({encoded}));")
+            elif spec.field_type == "S16F":
+                lines.append(f"{indent}writeLe16(buffer.data() + {offset_expr}, static_cast<uint16_t>({encoded}));")
+            else:
+                lines.append(f"{indent}writeLe32(buffer.data() + {offset_expr}, static_cast<uint32_t>({encoded}));")
+        elif spec.field_type == "F32":
+            lines.append(f"{indent}{{")
+            lines.append(f"{indent}    float value = static_cast<float>({value_expr});")
+            lines.append(f"{indent}    uint32_t raw = 0;")
+            lines.append(f"{indent}    std::memcpy(&raw, &value, sizeof(raw));")
+            lines.append(f"{indent}    writeLe32(buffer.data() + {offset_expr}, raw);")
+            lines.append(f"{indent}}}")
+        elif spec.field_type == "F64":
+            lines.append(f"{indent}{{")
+            lines.append(f"{indent}    double value = static_cast<double>({value_expr});")
+            lines.append(f"{indent}    uint64_t raw = 0;")
+            lines.append(f"{indent}    std::memcpy(&raw, &value, sizeof(raw));")
+            lines.append(f"{indent}    char* dst = buffer.data() + {offset_expr};")
+            lines.append(f"{indent}    dst[0] = static_cast<char>(raw & 0xFF);")
+            lines.append(f"{indent}    dst[1] = static_cast<char>((raw >> 8) & 0xFF);")
+            lines.append(f"{indent}    dst[2] = static_cast<char>((raw >> 16) & 0xFF);")
+            lines.append(f"{indent}    dst[3] = static_cast<char>((raw >> 24) & 0xFF);")
+            lines.append(f"{indent}    dst[4] = static_cast<char>((raw >> 32) & 0xFF);")
+            lines.append(f"{indent}    dst[5] = static_cast<char>((raw >> 40) & 0xFF);")
+            lines.append(f"{indent}    dst[6] = static_cast<char>((raw >> 48) & 0xFF);")
+            lines.append(f"{indent}    dst[7] = static_cast<char>((raw >> 56) & 0xFF);")
+            lines.append(f"{indent}}}")
+
+    def emit_unpack(lines: List[str], spec: FieldSpec, target_expr: str, offset_expr: str, indent: str = "        ") -> None:
+        if spec.field_type in ("CONST", "ANY", "U8"):
+            value_expr = f"static_cast<uint8_t>(rawData[{offset_expr}])"
+        elif spec.field_type == "S8":
+            value_expr = f"static_cast<int8_t>(rawData[{offset_expr}])"
+        elif spec.field_type == "U16":
+            value_expr = f"readLe16(rawData + {offset_expr})"
+        elif spec.field_type == "S16":
+            value_expr = f"static_cast<int16_t>(readLe16(rawData + {offset_expr}))"
+        elif spec.field_type == "U32":
+            value_expr = f"readLe32(rawData + {offset_expr})"
+        elif spec.field_type == "S32":
+            value_expr = f"static_cast<int32_t>(readLe32(rawData + {offset_expr}))"
+        elif spec.field_type in ("U8F", "U16F", "U32F"):
+            lsb = spec.lsb if spec.lsb is not None else 1.0
+            raw = f"static_cast<uint8_t>(rawData[{offset_expr}])" if spec.field_type == "U8F" else (
+                f"readLe16(rawData + {offset_expr})" if spec.field_type == "U16F" else f"readLe32(rawData + {offset_expr})"
+            )
+            value_expr = f"decodeUnsigned({raw}, {_format_float_literal(lsb)})"
+        elif spec.field_type in ("S8F", "S16F", "S32F"):
+            lsb = spec.lsb if spec.lsb is not None else 1.0
+            if spec.field_type == "S8F":
+                raw = f"static_cast<int8_t>(rawData[{offset_expr}])"
+            elif spec.field_type == "S16F":
+                raw = f"static_cast<int16_t>(readLe16(rawData + {offset_expr}))"
+            else:
+                raw = f"static_cast<int32_t>(readLe32(rawData + {offset_expr}))"
+            value_expr = f"decodeSigned({raw}, {_format_float_literal(lsb)})"
+        elif spec.field_type == "F32":
+            lines.append(f"{indent}{{")
+            lines.append(f"{indent}    uint32_t raw = readLe32(rawData + {offset_expr});")
+            lines.append(f"{indent}    float value = 0.0f;")
+            lines.append(f"{indent}    std::memcpy(&value, &raw, sizeof(value));")
+            lines.append(f"{indent}    {target_expr} = value;")
+            lines.append(f"{indent}}}")
+            return
+        elif spec.field_type == "F64":
+            lines.append(f"{indent}{{")
+            lines.append(f"{indent}    const char* src = rawData + {offset_expr};")
+            lines.append(f"{indent}    uint64_t raw = 0;")
+            lines.append(f"{indent}    raw |= static_cast<uint64_t>(static_cast<uint8_t>(src[0]));")
+            lines.append(f"{indent}    raw |= static_cast<uint64_t>(static_cast<uint8_t>(src[1])) << 8;")
+            lines.append(f"{indent}    raw |= static_cast<uint64_t>(static_cast<uint8_t>(src[2])) << 16;")
+            lines.append(f"{indent}    raw |= static_cast<uint64_t>(static_cast<uint8_t>(src[3])) << 24;")
+            lines.append(f"{indent}    raw |= static_cast<uint64_t>(static_cast<uint8_t>(src[4])) << 32;")
+            lines.append(f"{indent}    raw |= static_cast<uint64_t>(static_cast<uint8_t>(src[5])) << 40;")
+            lines.append(f"{indent}    raw |= static_cast<uint64_t>(static_cast<uint8_t>(src[6])) << 48;")
+            lines.append(f"{indent}    raw |= static_cast<uint64_t>(static_cast<uint8_t>(src[7])) << 56;")
+            lines.append(f"{indent}    double value = 0.0;")
+            lines.append(f"{indent}    std::memcpy(&value, &raw, sizeof(value));")
+            lines.append(f"{indent}    {target_expr} = value;")
+            lines.append(f"{indent}}}")
+            return
+        else:
+            value_expr = "0"
+        lines.append(f"{indent}{target_expr} = {value_expr};")
 
     for meta in metas:
         spec = meta.spec
@@ -798,8 +1062,9 @@ def generate_cpp_code(frame_name: str, fields: List[FieldSpec]) -> str:
                 mask = "0xFFFFFFFFu" if bit_len == 32 else f"((1u << {bit_len}) - 1u)"
                 _, field_name = split_group_name(bit_spec.name_en)
                 field_name = normalize_identifier(field_name)
+                target = f"frame.{group.member_name}.{field_name}"
                 lines.append(
-                    f"        frame.{group.member_name}.{field_name} = ({group.member_name}Value >> {bit_meta.bit_offset}) & {mask};"
+                    f"        {target} = ({group.member_name}Value >> {bit_meta.bit_offset}) & {mask};"
                 )
             continue
 
