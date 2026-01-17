@@ -124,11 +124,11 @@ class FunctionCard(CardWidget):
 
 
 class FunctionArea(QWidget):
-    """核心功能区（4列2行卡片布局）"""
+    """核心功能区（4列3行卡片布局）"""
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setFixedHeight(640)
+        self.setFixedHeight(980)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(30, 10, 30, 10)
@@ -211,15 +211,27 @@ class FunctionArea(QWidget):
             color="#4C6A92"
         )
 
-        # 添加卡片到网格（4列2行）
+        # 卡片 9：算法编辑（青蓝色）
+        self.card9 = FunctionCard(
+            icon=FIF.IOT,
+            title="飞控算法工作台",
+            description="编辑控制器描述文件，支持 Program 与流程图联动",
+            button_text="打开工作台",
+            color="#0F766E"
+        )
+
+        # 添加卡片到网格（4列3行）
         grid_layout.addWidget(self.card1, 0, 0)
         grid_layout.addWidget(self.card2, 0, 1)
         grid_layout.addWidget(self.card5, 0, 2)
         grid_layout.addWidget(self.card6, 0, 3)
+
         grid_layout.addWidget(self.card7, 1, 0)
         grid_layout.addWidget(self.card8, 1, 1)
-        grid_layout.addWidget(self.card3, 1, 2)
-        grid_layout.addWidget(self.card4, 1, 3)
+        grid_layout.addWidget(self.card9, 1, 2)
+        grid_layout.addWidget(self.card3, 1, 3)
+
+        grid_layout.addWidget(self.card4, 2, 0)
 
         # 居中对齐网格
         grid_layout.setColumnStretch(0, 1)
@@ -307,6 +319,7 @@ class HomeInterface(QWidget):
     switch_to_ftp = pyqtSignal()
     switch_to_data_visualization = pyqtSignal()
     switch_to_protocol_editor = pyqtSignal()
+    switch_to_autopilot_editor = pyqtSignal()
     switch_to_settings = pyqtSignal()
 
     def __init__(self, parent=None):
@@ -404,6 +417,7 @@ class HomeInterface(QWidget):
         self.function_area.card6.button.clicked.connect(self._on_ftp_clicked)
         self.function_area.card7.button.clicked.connect(self._on_data_visualization_clicked)
         self.function_area.card8.button.clicked.connect(self._on_protocol_editor_clicked)
+        self.function_area.card9.button.clicked.connect(self._on_autopilot_editor_clicked)
 
     def _on_env_config_clicked(self):
         """开发环境配置按钮点击事件 - 跳转到环境配置页面"""
@@ -436,3 +450,7 @@ class HomeInterface(QWidget):
     def _on_protocol_editor_clicked(self):
         """协议编辑按钮点击事件 - 跳转到协议编辑页面"""
         self.switch_to_protocol_editor.emit()
+
+    def _on_autopilot_editor_clicked(self):
+        """算法编辑按钮点击事件 - 跳转到算法编辑页面"""
+        self.switch_to_autopilot_editor.emit()

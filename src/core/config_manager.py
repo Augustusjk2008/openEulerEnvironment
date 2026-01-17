@@ -48,6 +48,7 @@ class ConfigManager:
         "show_log_timestamp": True,  # 显示日志时间戳
         "confirm_before_init": True,  # 初始化前确认
         "protocol_csv_dir": "",  # 协议CSV目录
+        "autopilot_json_dir": "",  # AutoPilot JSON 目录
     }
 
     # 字体大小映射
