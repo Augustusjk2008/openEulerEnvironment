@@ -192,7 +192,7 @@ def normalize_controller_document(
     *,
     declare_missing_data: bool = False,
     expand_scalar_dims: bool = False,
-    expand_sequence_dims: bool = True,
+    expand_sequence_dims: bool = False,
 ) -> Dict[str, Any]:
     out: Dict[str, Any] = dict(doc) if isinstance(doc, dict) else {}
     legacy_state_raw = out.get("state") if isinstance(out.get("state"), dict) else {}
@@ -214,6 +214,24 @@ def normalize_controller_document(
     data = out.get("data")
     if isinstance(data, dict):
         out["data"] = data
+        for name, meta in data.items():
+            if not isinstance(name, str) or not name:
+                continue
+            if not isinstance(meta, dict):
+                continue
+            io = meta.get("io")
+            if not isinstance(io, str) or io not in {"input", "output", "internal"}:
+                meta["io"] = "internal"
+            kind = str(meta.get("kind") or "")
+            if kind == "sequence":
+                meta["dim"] = 1
+                init = meta.get("init")
+                if isinstance(init, list) and init:
+                    meta["init"] = [init[0]]
+                elif init is None:
+                    meta["init"] = [0.0]
+                else:
+                    meta["init"] = [init]
 
         program = out.get("program")
         if isinstance(program, list):
@@ -347,6 +365,7 @@ def normalize_controller_document(
         d = legacy_desc.get(k)
         if isinstance(d, str) and d:
             e["desc"] = d
+        e["io"] = "internal"
 
     for k, v in legacy_scalars.items():
         if not isinstance(k, str) or not k:
@@ -363,6 +382,7 @@ def normalize_controller_document(
         d = legacy_desc.get(k)
         if isinstance(d, str) and d:
             e["desc"] = d
+        e["io"] = "internal"
 
     for k, v in legacy_sequences.items():
         if not isinstance(k, str) or not k:
@@ -371,19 +391,19 @@ def normalize_controller_document(
         e["kind"] = "sequence"
         e["type"] = str(legacy_types.get(k) or "f64")
         init = v.get("init") if isinstance(v, dict) else None
+        e["dim"] = 1
         if isinstance(init, list) and init:
-            e["dim"] = max(1, len(init))
-            e["init"] = init
+            e["init"] = [init[0]]
         else:
-            e["dim"] = 1
             e["init"] = [0.0]
         if k in legacy_shift:
             e["iterate"] = True
         d = legacy_desc.get(k)
         if isinstance(d, str) and d:
             e["desc"] = d
+        e["io"] = "internal"
 
-    for p in list(legacy_inputs) + list(legacy_outputs):
+    for p in legacy_inputs:
         if not isinstance(p, dict):
             continue
         name = p.get("id")
@@ -406,6 +426,32 @@ def normalize_controller_document(
         d = p.get("desc") or p.get("unit")
         if isinstance(d, str) and d and "desc" not in e:
             e["desc"] = d
+        e["io"] = "input"
+
+    for p in legacy_outputs:
+        if not isinstance(p, dict):
+            continue
+        name = p.get("id")
+        if not isinstance(name, str) or not name:
+            continue
+        e = ensure_entry(name)
+        if "kind" not in e:
+            e["kind"] = "scalar"
+        t = p.get("type")
+        if isinstance(t, str) and t:
+            dt, dim = parse_port_type(t)
+            if dt:
+                e["type"] = dt
+            if "dim" not in e:
+                e["dim"] = dim
+        if "dim" not in e:
+            e["dim"] = 1
+        if "init" not in e:
+            e["init"] = 0.0 if int(e.get("dim") or 1) == 1 else [0.0] * int(e.get("dim") or 1)
+        d = p.get("desc") or p.get("unit")
+        if isinstance(d, str) and d and "desc" not in e:
+            e["desc"] = d
+        e["io"] = "output"
 
     program = out.get("program")
     if isinstance(program, list):
@@ -506,7 +552,7 @@ def validate_document(doc: Dict[str, Any]) -> List[ValidationIssue]:
         doc,
         declare_missing_data=False,
         expand_scalar_dims=False,
-        expand_sequence_dims=True,
+        expand_sequence_dims=False,
     )
 
     data = normalized.get("data")
@@ -568,7 +614,20 @@ def validate_document(doc: Dict[str, Any]) -> List[ValidationIssue]:
         return issues
 
     allowed_funcs = {"abs", "min", "max"}
-    allowed_keywords = {"and", "or", "not", "True", "False"}
+    allowed_keywords = {
+        "and",
+        "or",
+        "not",
+        "True",
+        "False",
+        "Inf",
+        "inf",
+        "Infinity",
+        "infinity",
+        "INFINITY",
+    }
+    used_vars: set[str] = set()
+    assigned_vars: set[str] = set()
 
     def check_expr(expr: Any, expr_path: str) -> None:
         if isinstance(expr, (int, float)):
@@ -600,6 +659,7 @@ def validate_document(doc: Dict[str, Any]) -> List[ValidationIssue]:
             if ident == "STATE":
                 continue
             if ident in data_names:
+                used_vars.add(ident)
                 continue
             issues.append(ValidationIssue("error", f"表达式引用未知变量: {ident}", expr_path))
 
@@ -641,6 +701,8 @@ def validate_document(doc: Dict[str, Any]) -> List[ValidationIssue]:
             base, _ = parse_lhs_target(lhs)
             if base not in data_names and base != "STATE":
                 issues.append(ValidationIssue("error", f"lhs 引用了不存在的变量: {base}", f"{node_path}.lhs"))
+            elif base != "STATE":
+                assigned_vars.add(base)
 
         if op == "assign":
             check_expr(node.get("rhs"), f"{node_path}.rhs")
@@ -675,6 +737,17 @@ def validate_document(doc: Dict[str, Any]) -> List[ValidationIssue]:
 
     for node, path in iter_program_nodes(normalized):
         check_node(node, f"$.program.{path}" if path else "$.program")
+
+    for name in sorted(used_vars):
+        meta = data.get(name, {})
+        if not isinstance(meta, dict):
+            continue
+        if str(meta.get("io") or "internal") == "input":
+            continue
+        if str(meta.get("kind") or "") == "constant":
+            continue
+        if name not in assigned_vars:
+            issues.append(ValidationIssue("error", f"数据无来源: {name} 只被读取未被赋值（且非输入/非常数）", f"$.data.{name}"))
 
     return issues
 

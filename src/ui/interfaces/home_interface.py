@@ -214,7 +214,7 @@ class FunctionArea(QWidget):
         # 卡片 9：算法编辑（青蓝色）
         self.card9 = FunctionCard(
             icon=FIF.IOT,
-            title="飞控算法工作台",
+            title="算法工作台",
             description="编辑控制器描述文件，支持 Program 与流程图联动",
             button_text="打开工作台",
             color="#0F766E"

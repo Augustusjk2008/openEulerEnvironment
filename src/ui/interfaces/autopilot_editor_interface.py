@@ -65,6 +65,7 @@ from core.autopilot_document import (
     save_json,
     validate_document,
 )
+from core.autopilot_codegen_cpp import generate_cpp_header
 
 
 @dataclass
@@ -444,12 +445,23 @@ class AutopilotEditorInterface(QWidget):
         self._init_ui()
         self._refresh_all()
 
+    def _show_bar(self, level: str, title: str, content: str):
+        def show():
+            if level == "success":
+                InfoBar.success(title=title, content=content, parent=self)
+            elif level == "warning":
+                InfoBar.warning(title=title, content=content, parent=self)
+            else:
+                InfoBar.error(title=title, content=content, parent=self)
+
+        QTimer.singleShot(0, show)
+
     def _init_ui(self):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(30, 20, 30, 20)
         layout.setSpacing(14)
 
-        title = SubtitleLabel("飞控算法工作台（控制器 JSON）")
+        title = SubtitleLabel("算法工作台")
         title.setStyleSheet(f"color: #2D3748; font-size: {FontManager.get_font_size('large_title')}px;")
         layout.addWidget(title)
 
@@ -488,6 +500,11 @@ class AutopilotEditorInterface(QWidget):
         open_btn.clicked.connect(self._open_file)
         row.addWidget(open_btn)
 
+        new_btn = PushButton("新建")
+        new_btn.setFixedHeight(34)
+        new_btn.clicked.connect(self._new_file)
+        row.addWidget(new_btn)
+
         save_btn = PushButton("保存")
         save_btn.setFixedHeight(34)
         save_btn.clicked.connect(self._save_file)
@@ -523,7 +540,7 @@ class AutopilotEditorInterface(QWidget):
 
         tabs.addTab(self.program_tab, "Program")
         tabs.addTab(self.graph_tab, "Graph")
-        tabs.addTab(self.json_tab, "JSON")
+        tabs.addTab(self.json_tab, "Code")
         tabs.addTab(self.data_tab, "Data")
 
         self._init_program_tab()
@@ -768,16 +785,38 @@ class AutopilotEditorInterface(QWidget):
         header = QHBoxLayout()
         header.setSpacing(8)
         header.addWidget(IconWidget(FIF.DOCUMENT))
-        title = StrongBodyLabel("JSON（只读）")
+        title = StrongBodyLabel("Code（只读）")
         title.setStyleSheet(f"font-size: {FontManager.get_font_size('title')}px; color: #2D3748;")
         header.addWidget(title)
         header.addStretch()
         c.addLayout(header)
 
+        split = QSplitter(Qt.Horizontal)
+
+        left = QWidget()
+        left_layout = QVBoxLayout(left)
+        left_layout.setContentsMargins(0, 0, 0, 0)
+        left_layout.setSpacing(8)
+        left_layout.addWidget(StrongBodyLabel("JSON"))
         self.json_view = QPlainTextEdit()
         self.json_view.setReadOnly(True)
         self.json_view.setLineWrapMode(QPlainTextEdit.NoWrap)
-        c.addWidget(self.json_view, 1)
+        left_layout.addWidget(self.json_view, 1)
+        split.addWidget(left)
+
+        right = QWidget()
+        right_layout = QVBoxLayout(right)
+        right_layout.setContentsMargins(0, 0, 0, 0)
+        right_layout.setSpacing(8)
+        right_layout.addWidget(StrongBodyLabel("C++"))
+        self.cpp_view = QPlainTextEdit()
+        self.cpp_view.setReadOnly(True)
+        self.cpp_view.setLineWrapMode(QPlainTextEdit.NoWrap)
+        right_layout.addWidget(self.cpp_view, 1)
+        split.addWidget(right)
+        split.setSizes([650, 650])
+
+        c.addWidget(split, 1)
 
         layout.addWidget(card, 1)
 
@@ -837,9 +876,10 @@ class AutopilotEditorInterface(QWidget):
         tool_row.addStretch()
         c.addLayout(tool_row)
 
-        self.symbols_table = QTableWidget(0, 7)
+        self.symbols_table = QTableWidget(0, 8)
         self.symbols_table.setHorizontalHeaderLabels([
             "名称",
+            "属性",
             "类别",
             "迭代",
             "类型",
@@ -973,7 +1013,17 @@ class AutopilotEditorInterface(QWidget):
         if os.path.exists(path):
             self._load_file(path)
         else:
-            InfoBar.error(title="未找到示例", content=path, parent=self)
+            self._show_bar("error", "未找到示例", path)
+
+    def _new_file(self):
+        self.doc = create_default_document()
+        ensure_program_ids(self.doc)
+        self._normalize_doc_for_editor()
+        self._graph_first_render = True
+        self.current_file = None
+        self._dirty = True
+        self._refresh_all()
+        self._show_bar("success", "已新建", "未保存")
 
     def _open_file(self):
         start_dir = self.config_manager.get("autopilot_json_dir", "") or get_program_dir()
@@ -986,7 +1036,7 @@ class AutopilotEditorInterface(QWidget):
         try:
             doc = load_json(path)
         except Exception as e:
-            InfoBar.error(title="打开失败", content=str(e), parent=self)
+            self._show_bar("error", "打开失败", str(e))
             return
         self.doc = doc
         ensure_program_ids(self.doc)
@@ -996,7 +1046,7 @@ class AutopilotEditorInterface(QWidget):
         self.config_manager.set("autopilot_json_dir", os.path.dirname(path))
         self._dirty = False
         self._refresh_all()
-        InfoBar.success(title="已打开", content=os.path.basename(path), parent=self)
+        self._show_bar("success", "已打开", os.path.basename(path))
 
     def _save_as(self):
         start_dir = self.config_manager.get("autopilot_json_dir", "") or get_program_dir()
@@ -1013,18 +1063,18 @@ class AutopilotEditorInterface(QWidget):
             return
         try:
             for r in range(self.symbols_table.rowCount()) if hasattr(self, "symbols_table") and self.symbols_table is not None else []:
-                spin = self._cell_spin(r, 4)
+                spin = self._cell_spin(r, 5)
                 if spin is not None:
                     spin.interpretText()
             self._symbols_changed()
             ensure_program_ids(self.doc)
             save_json(self.current_file, self.doc)
         except Exception as e:
-            InfoBar.error(title="保存失败", content=str(e), parent=self)
+            self._show_bar("error", "保存失败", str(e))
             return
         self._dirty = False
         self._refresh_json()
-        InfoBar.success(title="已保存", content=os.path.basename(self.current_file), parent=self)
+        self._show_bar("success", "已保存", os.path.basename(self.current_file))
 
     def _set_dirty(self):
         if self._suppress_updates:
@@ -1037,9 +1087,9 @@ class AutopilotEditorInterface(QWidget):
         self._show_issues(issues)
         error_count = sum(1 for x in issues if x.level == "error")
         if error_count:
-            InfoBar.warning(title="校验完成", content=f"{error_count} 个错误", parent=self)
+            self._show_bar("warning", "校验完成", f"{error_count} 个错误")
         else:
-            InfoBar.success(title="校验通过", content="未发现错误", parent=self)
+            self._show_bar("success", "校验通过", "未发现错误")
 
     def _show_issues(self, issues: List[ValidationIssue]):
         self.problems_table.setRowCount(0)
@@ -1063,7 +1113,7 @@ class AutopilotEditorInterface(QWidget):
             msg = self.problems_table.item(r, 2).text() if self.problems_table.item(r, 2) else ""
             lines.append(f"{level}\t{path}\t{msg}")
         QApplication.clipboard().setText("\n".join(lines))
-        InfoBar.success(title="已复制", content=f"{max(0, self.problems_table.rowCount())} 条", parent=self)
+        self._show_bar("success", "已复制", f"{max(0, self.problems_table.rowCount())} 条")
 
     def _refresh_all(self):
         self.path_edit.setText(self.current_file or "")
@@ -1079,6 +1129,12 @@ class AutopilotEditorInterface(QWidget):
         except Exception:
             text = ""
         self.json_view.setPlainText(text)
+        try:
+            cpp = generate_cpp_header(self.doc, self.current_file)
+        except Exception as e:
+            cpp = f"// 生成失败: {e}\n"
+        if hasattr(self, "cpp_view") and self.cpp_view is not None:
+            self.cpp_view.setPlainText(cpp)
         if self.current_file:
             suffix = " *" if self._dirty else ""
             self.path_edit.setText(self.current_file + suffix)
@@ -1758,7 +1814,7 @@ class AutopilotEditorInterface(QWidget):
         node, _ = found
         text = dump_json_text(node)
         QApplication.clipboard().setText(text)
-        InfoBar.success(title="已复制", content="节点 JSON 已放入剪贴板", parent=self)
+        self._show_bar("success", "已复制", "节点 JSON 已放入剪贴板")
 
     def _paste_to_selected(self):
         text = QApplication.clipboard().text() or ""
@@ -1770,10 +1826,10 @@ class AutopilotEditorInterface(QWidget):
 
             data = _json.loads(text)
         except Exception:
-            InfoBar.error(title="粘贴失败", content="剪贴板不是有效 JSON", parent=self)
+            self._show_bar("error", "粘贴失败", "剪贴板不是有效 JSON")
             return
         if not isinstance(data, dict) or "op" not in data:
-            InfoBar.error(title="粘贴失败", content="需要粘贴一个 program 节点对象", parent=self)
+            self._show_bar("error", "粘贴失败", "需要粘贴一个 program 节点对象")
             return
         data = dict(data)
         data["_id"] = ""
@@ -1858,31 +1914,37 @@ class AutopilotEditorInterface(QWidget):
             self._symbols_changed()
 
     def _symbols_init_row_widgets(self, row: int):
+        io_combo = QComboBox()
+        io_combo.addItems(["内部", "输入", "输出"])
+        io_combo.setCurrentText("内部")
+        io_combo.currentIndexChanged.connect(lambda _=None: self._symbols_changed())
+        self.symbols_table.setCellWidget(row, 1, io_combo)
+
         kind_combo = QComboBox()
         kind_combo.addItems(["常数", "变量", "序列"])
         kind_combo.setCurrentText("变量")
         kind_combo.currentIndexChanged.connect(lambda _=None, r=row: self._on_symbol_kind_changed(r))
-        self.symbols_table.setCellWidget(row, 1, kind_combo)
+        self.symbols_table.setCellWidget(row, 2, kind_combo)
 
         iter_wrap, iter_cb = self._make_centered_checkbox()
         iter_cb.stateChanged.connect(lambda _=None: self._symbols_changed())
-        self.symbols_table.setCellWidget(row, 2, iter_wrap)
+        self.symbols_table.setCellWidget(row, 3, iter_wrap)
 
         type_combo = QComboBox()
         type_combo.addItems(["f32", "f64", "int", "uint"])
         type_combo.currentIndexChanged.connect(lambda _=None: self._symbols_changed())
-        self.symbols_table.setCellWidget(row, 3, type_combo)
+        self.symbols_table.setCellWidget(row, 4, type_combo)
 
         dim_spin = QSpinBox()
         dim_spin.setRange(1, 1024)
         dim_spin.setValue(1)
         dim_spin.valueChanged.connect(lambda _=None: self._symbols_changed())
         dim_spin.editingFinished.connect(self._symbols_changed)
-        self.symbols_table.setCellWidget(row, 4, dim_spin)
+        self.symbols_table.setCellWidget(row, 5, dim_spin)
 
         self.symbols_table.setItem(row, 0, QTableWidgetItem(""))
-        self.symbols_table.setItem(row, 5, QTableWidgetItem("0"))
-        self.symbols_table.setItem(row, 6, QTableWidgetItem(""))
+        self.symbols_table.setItem(row, 6, QTableWidgetItem("0"))
+        self.symbols_table.setItem(row, 7, QTableWidgetItem(""))
 
         self._apply_symbol_row_enabled(row)
 
@@ -1900,13 +1962,18 @@ class AutopilotEditorInterface(QWidget):
         self._symbols_changed()
 
     def _apply_symbol_row_enabled(self, row: int):
-        kind = self._cell_combo_text(row, 1)
+        kind = self._cell_combo_text(row, 2)
         is_seq = kind == "序列"
-        iter_cb = self._cell_checkbox(row, 2)
+        iter_cb = self._cell_checkbox(row, 3)
         if iter_cb is not None:
             iter_cb.setEnabled(is_seq)
             if is_seq and iter_cb.checkState() == Qt.Unchecked:
                 iter_cb.setChecked(True)
+        dim_spin = self._cell_spin(row, 5)
+        if dim_spin is not None:
+            dim_spin.setEnabled(not is_seq)
+            if is_seq and int(dim_spin.value()) != 1:
+                dim_spin.setValue(1)
 
     def _refresh_symbols_table(self):
         self.symbols_table.setRowCount(0)
@@ -1930,21 +1997,28 @@ class AutopilotEditorInterface(QWidget):
 
             self.symbols_table.item(row, 0).setText(name)
 
+            io_cn = {"internal": "内部", "input": "输入", "output": "输出"}.get(str(meta.get("io") or "internal"), "内部")
+            io_combo = self._cell_combo(row, 1)
+            if io_combo is not None:
+                idx = io_combo.findText(io_cn)
+                if idx >= 0:
+                    io_combo.setCurrentIndex(idx)
+
             kind = kind_cn.get(str(meta.get("kind", "")), "变量")
-            kind_combo = self._cell_combo(row, 1)
+            kind_combo = self._cell_combo(row, 2)
             if kind_combo is not None:
                 idx = kind_combo.findText(kind)
                 if idx >= 0:
                     kind_combo.setCurrentIndex(idx)
 
-            iter_cb = self._cell_checkbox(row, 2)
+            iter_cb = self._cell_checkbox(row, 3)
             if iter_cb is not None:
                 iter_cb.setChecked(bool(meta.get("iterate")) if kind == "序列" else False)
 
             dtype = str(meta.get("type") or "f64")
             if dtype not in {"f32", "f64", "int", "uint"}:
                 dtype = "f64"
-            type_combo = self._cell_combo(row, 3)
+            type_combo = self._cell_combo(row, 4)
             if type_combo is not None:
                 idx = type_combo.findText(dtype)
                 if idx >= 0:
@@ -1956,11 +2030,13 @@ class AutopilotEditorInterface(QWidget):
             except Exception:
                 dim_i = 1
             dim_i = max(1, dim_i)
-            dim_spin = self._cell_spin(row, 4)
+            if kind == "序列":
+                dim_i = 1
+            dim_spin = self._cell_spin(row, 5)
             if dim_spin is not None:
                 dim_spin.setValue(dim_i)
 
-            init_item = self.symbols_table.item(row, 5)
+            init_item = self.symbols_table.item(row, 6)
             init = meta.get("init")
             if init_item is not None:
                 if isinstance(init, list):
@@ -1968,7 +2044,7 @@ class AutopilotEditorInterface(QWidget):
                 else:
                     init_item.setText(str(init if init is not None else 0))
 
-            desc_item = self.symbols_table.item(row, 6)
+            desc_item = self.symbols_table.item(row, 7)
             if desc_item is not None:
                 desc_item.setText(str(meta.get("desc") or ""))
 
@@ -1978,6 +2054,7 @@ class AutopilotEditorInterface(QWidget):
         if self._suppress_updates:
             return
         kind_map = {"常数": "constant", "变量": "scalar", "序列": "sequence"}
+        io_map = {"内部": "internal", "输入": "input", "输出": "output"}
         data: Dict[str, Any] = {}
 
         for r in range(self.symbols_table.rowCount()):
@@ -1986,17 +2063,24 @@ class AutopilotEditorInterface(QWidget):
             if not name:
                 continue
 
-            kind_cn = self._cell_combo_text(r, 1) or "变量"
+            io_cn = self._cell_combo_text(r, 1) or "内部"
+            io = io_map.get(io_cn, "internal")
+            kind_cn = self._cell_combo_text(r, 2) or "变量"
             kind = kind_map.get(kind_cn, "scalar")
-            iterate = self._cell_checkbox_checked(r, 2)
-            dtype = self._cell_combo_text(r, 3) or "f64"
-            dim = self._cell_spin_value(r, 4, 1)
-            init_text = (self.symbols_table.item(r, 5).text() if self.symbols_table.item(r, 5) else "").strip()
-            desc = (self.symbols_table.item(r, 6).text() if self.symbols_table.item(r, 6) else "").strip()
+            iterate = self._cell_checkbox_checked(r, 3)
+            dtype = self._cell_combo_text(r, 4) or "f64"
+            dim = self._cell_spin_value(r, 5, 1)
+            init_text = (self.symbols_table.item(r, 6).text() if self.symbols_table.item(r, 6) else "").strip()
+            desc = (self.symbols_table.item(r, 7).text() if self.symbols_table.item(r, 7) else "").strip()
 
-            entry: Dict[str, Any] = {"kind": kind, "type": dtype, "dim": max(1, int(dim))}
-            init_val = self._coerce_typed_array(dtype, init_text, entry["dim"])
-            entry["init"] = init_val if kind != "sequence" else (init_val if isinstance(init_val, list) else [init_val])
+            entry: Dict[str, Any] = {"io": io, "kind": kind, "type": dtype, "dim": max(1, int(dim))}
+            if kind == "sequence":
+                entry["dim"] = 1
+                v0 = self._coerce_typed_array(dtype, init_text, 1)
+                entry["init"] = [v0]
+            else:
+                init_val = self._coerce_typed_array(dtype, init_text, entry["dim"])
+                entry["init"] = init_val
             if desc:
                 entry["desc"] = desc
             if kind == "sequence" and iterate:
@@ -2263,7 +2347,7 @@ class AutopilotEditorInterface(QWidget):
         sequences = state.get("sequences", {}) if isinstance(state.get("sequences"), dict) else {}
         names = sorted(sequences.keys())
         if not names:
-            InfoBar.warning(title="无可选序列", content="请先在 Sequences 中添加", parent=self)
+            self._show_bar("warning", "无可选序列", "请先在 Sequences 中添加")
             return
         existing = {self.shift_list.item(i).text() for i in range(self.shift_list.count()) if self.shift_list.item(i)}
         for name in names:
