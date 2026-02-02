@@ -1,6 +1,8 @@
 @echo off
 setlocal
 
+set PYI_ARGS=--noconsole --onefile --paths=src --paths=. --hidden-import pyimod04_pywin32 --name=openEulerManage.exe
+
 if "%~1"=="" goto help
 if "%~1"=="help" goto help
 
@@ -18,7 +20,8 @@ if "%~1"=="dev" (
 
 if "%~1"=="build" (
     echo Building executable...
-    pyinstaller --noconsole --onefile --paths=src .\src\main.py --name=openEulerManage.exe
+    python -c "import pyimod04_pywin32 as p; p.patch_pyinstaller_loader_for_win7()"
+    python -m PyInstaller %PYI_ARGS% .\src\main.py
     goto :eof
 )
 
@@ -40,7 +43,8 @@ if "%~1"=="pack" (
 
 if "%~1"=="all" (
     echo [1/3] Building executable...
-    pyinstaller --noconsole --onefile --paths=src .\src\main.py --name=openEulerManage.exe
+    python -c "import pyimod04_pywin32 as p; p.patch_pyinstaller_loader_for_win7()"
+    python -m PyInstaller %PYI_ARGS% .\src\main.py
     if errorlevel 1 (
         echo [ERROR] Build failed.
         exit /b 1

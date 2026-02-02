@@ -600,7 +600,18 @@ class ProtocolEditorInterface(QWidget):
         warnings = validate_fields(fields)
         if warnings:
             InfoBar.warning("提示", warnings[0], duration=2500, parent=self.window())
-        save_csv(self.current_file, fields)
+        try:
+            save_csv(self.current_file, fields)
+        except OSError as e:
+            if getattr(e, "winerror", None) in (5, 32):
+                InfoBar.error("保存失败", "文件被占用或无权限，请关闭占用程序或使用“另存为”", duration=3500, parent=self.window())
+            else:
+                InfoBar.error("保存失败", f"无法保存文件：{str(e)}", duration=3500, parent=self.window())
+            return
+        except Exception as e:
+            InfoBar.error("保存失败", f"保存时发生异常：{str(e)}", duration=3500, parent=self.window())
+            return
+
         display_name = os.path.splitext(os.path.basename(self.current_file))[0]
         InfoBar.success("保存成功", f"已保存: {display_name}", duration=2000, parent=self.window())
         self._refresh_list()

@@ -191,21 +191,34 @@ def load_csv(path: str) -> List[FieldSpec]:
 
 
 def save_csv(path: str, fields: List[FieldSpec]) -> None:
-    with open(path, "w", encoding="utf-8-sig", newline="") as f:
-        writer = csv.writer(f)
-        writer.writerow(CSV_COLUMNS)
-        positions = compute_byte_positions(fields)
-        for idx, field in enumerate(fields, start=1):
-            writer.writerow([
-                positions[idx - 1] if idx - 1 < len(positions) else "",
-                field.length,
-                field.field_type,
-                field.name_cn,
-                field.name_en,
-                "" if field.lsb is None else field.lsb,
-                "" if field.default is None else field.default,
-                "1" if field.is_valid else "0",
-            ])
+    directory = os.path.dirname(path)
+    if directory:
+        os.makedirs(directory, exist_ok=True)
+
+    temp_path = f"{path}.tmp_{os.getpid()}"
+    try:
+        with open(temp_path, "w", encoding="utf-8-sig", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow(CSV_COLUMNS)
+            positions = compute_byte_positions(fields)
+            for idx, field in enumerate(fields, start=1):
+                writer.writerow([
+                    positions[idx - 1] if idx - 1 < len(positions) else "",
+                    field.length,
+                    field.field_type,
+                    field.name_cn,
+                    field.name_en,
+                    "" if field.lsb is None else field.lsb,
+                    "" if field.default is None else field.default,
+                    "1" if field.is_valid else "0",
+                ])
+        os.replace(temp_path, path)
+    finally:
+        try:
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+        except OSError:
+            pass
 
 
 def validate_fields(fields: List[FieldSpec]) -> List[str]:
