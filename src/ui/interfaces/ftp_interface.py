@@ -8,6 +8,7 @@ import posixpath
 import shutil
 import stat
 import time
+from pathlib import Path
 import paramiko
 from PyQt5.QtCore import Qt, QThread, pyqtSignal, QObject, pyqtSlot
 from PyQt5.QtWidgets import (
@@ -22,10 +23,14 @@ from qfluentwidgets import (
 )
 from core.config_manager import get_config_manager
 from core.font_manager import FontManager
+from core.ssh_utils import (
+    SSHClientFactory, SFTPTransferWorker
+)
 
 
 class SftpConnectWorker(QObject):
-    connected = pyqtSignal(object, object)
+    """SFTP连接工作线程 - 保留用于管理长期连接"""
+    connected = pyqtSignal(object, object)  # client, sftp
     failed = pyqtSignal(str)
     finished = pyqtSignal()
 
@@ -38,151 +43,35 @@ class SftpConnectWorker(QObject):
 
     @pyqtSlot()
     def run(self):
-        client = paramiko.SSHClient()
-        client.load_system_host_keys()
-        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        connect_kwargs = {
-            "hostname": self.host,
-            "username": self.username,
-            "timeout": self.timeout,
-        }
-        if self.password:
-            connect_kwargs.update({
-                "password": self.password,
-                "look_for_keys": False,
-                "allow_agent": False,
-            })
+        client = None
+        sftp = None
         try:
+            client = SSHClientFactory.create_client()
+            connect_kwargs = SSHClientFactory.build_connect_kwargs(
+                self.host, self.username, self.password, self.timeout
+            )
             client.connect(**connect_kwargs)
             sftp = client.open_sftp()
             self.connected.emit(client, sftp)
+            # 成功发射信号后，将资源置为None避免在finally中关闭
+            # 因为接收方会负责管理这些资源的生命周期
+            client = None
+            sftp = None
         except Exception as exc:
-            client.close()
+            # 确保在异常时关闭已打开的资源
+            if sftp is not None:
+                try:
+                    sftp.close()
+                except Exception:
+                    pass
+            if client is not None:
+                try:
+                    client.close()
+                except Exception:
+                    pass
             self.failed.emit(str(exc))
         finally:
             self.finished.emit()
-
-
-class TransferWorker(QThread):
-    finished_signal = pyqtSignal(bool, str)
-
-    def __init__(self, host, username, password, action, local_path, remote_path, delete_source=False):
-        super().__init__()
-        self.host = host
-        self.username = username
-        self.password = password
-        self.action = action
-        self.local_path = local_path
-        self.remote_path = remote_path
-        self.delete_source = delete_source
-
-    def run(self):
-        ssh = None
-        sftp = None
-        try:
-            ssh = paramiko.SSHClient()
-            ssh.load_system_host_keys()
-            ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-            connect_kwargs = {
-                "hostname": self.host,
-                "username": self.username,
-                "timeout": 30,
-            }
-            if self.password:
-                connect_kwargs.update({
-                    "password": self.password,
-                    "look_for_keys": False,
-                    "allow_agent": False,
-                })
-            ssh.connect(**connect_kwargs)
-            sftp = ssh.open_sftp()
-
-            if self.action == "upload":
-                self._upload(sftp, self.local_path, self.remote_path)
-                if self.delete_source:
-                    self._delete_local(self.local_path)
-            elif self.action == "download":
-                self._download(sftp, self.remote_path, self.local_path)
-                if self.delete_source:
-                    self._delete_remote(sftp, self.remote_path)
-            else:
-                raise ValueError("未知传输类型")
-
-            self.finished_signal.emit(True, "传输完成")
-        except Exception as exc:
-            self.finished_signal.emit(False, f"传输失败: {exc}")
-        finally:
-            if sftp is not None:
-                sftp.close()
-            if ssh is not None:
-                ssh.close()
-
-    def _ensure_remote_dir(self, sftp, remote_path):
-        if remote_path in ("", "/"):
-            return
-        parts = remote_path.strip("/").split("/")
-        current = ""
-        for part in parts:
-            current = f"{current}/{part}" if current else f"/{part}"
-            try:
-                sftp.stat(current)
-            except Exception:
-                sftp.mkdir(current)
-
-    def _upload(self, sftp, local_path, remote_path):
-        if os.path.isdir(local_path):
-            self._ensure_remote_dir(sftp, remote_path)
-            for root, _, files in os.walk(local_path):
-                rel = os.path.relpath(root, local_path)
-                rel = "" if rel == "." else rel.replace("\\", "/")
-                target_dir = remote_path if not rel else posixpath.join(remote_path, rel)
-                self._ensure_remote_dir(sftp, target_dir)
-                for filename in files:
-                    local_file = os.path.join(root, filename)
-                    remote_file = posixpath.join(target_dir, filename)
-                    sftp.put(local_file, remote_file)
-        else:
-            remote_dir = posixpath.dirname(remote_path)
-            self._ensure_remote_dir(sftp, remote_dir)
-            sftp.put(local_path, remote_path)
-
-    def _download(self, sftp, remote_path, local_path):
-        info = sftp.stat(remote_path)
-        if stat.S_ISDIR(info.st_mode):
-            os.makedirs(local_path, exist_ok=True)
-            for entry in sftp.listdir_attr(remote_path):
-                remote_child = posixpath.join(remote_path, entry.filename)
-                local_child = os.path.join(local_path, entry.filename)
-                if stat.S_ISDIR(entry.st_mode):
-                    self._download(sftp, remote_child, local_child)
-                else:
-                    os.makedirs(os.path.dirname(local_child), exist_ok=True)
-                    sftp.get(remote_child, local_child)
-        else:
-            os.makedirs(os.path.dirname(local_path), exist_ok=True)
-            sftp.get(remote_path, local_path)
-
-    def _delete_remote(self, sftp, remote_path):
-        try:
-            info = sftp.stat(remote_path)
-        except Exception:
-            return
-        if stat.S_ISDIR(info.st_mode):
-            for entry in sftp.listdir_attr(remote_path):
-                child = posixpath.join(remote_path, entry.filename)
-                if stat.S_ISDIR(entry.st_mode):
-                    self._delete_remote(sftp, child)
-                else:
-                    sftp.remove(child)
-            sftp.rmdir(remote_path)
-        else:
-            sftp.remove(remote_path)
-
-    def _delete_local(self, local_path):
-        if os.path.isdir(local_path):
-            shutil.rmtree(local_path)
-        else:
-            os.remove(local_path)
 
 
 class FtpInterface(QWidget):
@@ -199,7 +88,7 @@ class FtpInterface(QWidget):
         self._connect_worker = None
         self._transfer_worker = None
         self._transfer_context = None
-        self.local_dir = os.path.expanduser("~")
+        self.local_dir = str(Path.home())
         self.remote_dir = "/"
 
         self._init_ui()
@@ -528,9 +417,10 @@ class FtpInterface(QWidget):
         return table
 
     def _load_defaults(self):
-        self.host_edit.setText(self.config_manager.get("ftp_host", "192.168.137.100"))
-        self.user_edit.setText(self.config_manager.get("ftp_username", "root"))
-        self.pass_edit.setText(self.config_manager.get("ftp_password", "Shanghaith8"))
+        # 从配置文件加载FTP连接信息，无默认值（避免硬编码敏感信息）
+        self.host_edit.setText(self.config_manager.get("ftp_host", ""))
+        self.user_edit.setText(self.config_manager.get("ftp_username", ""))
+        self.pass_edit.setText(self.config_manager.get("ftp_password", ""))
         self.local_path_edit.setText(self.local_dir)
         self.remote_path_edit.setText(self.remote_dir)
 
@@ -611,12 +501,12 @@ class FtpInterface(QWidget):
         if self.sftp is not None:
             try:
                 self.sftp.close()
-            except Exception:
+            except (paramiko.SSHException, IOError, OSError):
                 pass
         if self.ssh_client is not None:
             try:
                 self.ssh_client.close()
-            except Exception:
+            except (paramiko.SSHException, IOError, OSError):
                 pass
         self.sftp = None
         self.ssh_client = None
@@ -650,13 +540,13 @@ class FtpInterface(QWidget):
     def _set_local_path(self, path):
         if not path:
             return
-        path = os.path.abspath(os.path.expanduser(path))
-        if not os.path.isdir(path):
+        path_obj = Path(path).expanduser().resolve()
+        if not path_obj.is_dir():
             InfoBar.warning("提示", "本地目录不存在", duration=2000, parent=self.window())
             self.local_path_edit.setText(self.local_dir)
             return
-        self.local_dir = path
-        self.local_path_edit.setText(path)
+        self.local_dir = str(path_obj)
+        self.local_path_edit.setText(self.local_dir)
         self._refresh_local_list()
 
     def _set_remote_path(self, path):
@@ -666,9 +556,15 @@ class FtpInterface(QWidget):
         try:
             info = self.sftp.stat(normalized)
             if not stat.S_ISDIR(info.st_mode):
-                raise ValueError("目标不是目录")
-        except Exception:
+                InfoBar.warning("提示", "目标不是目录", duration=2000, parent=self.window())
+                self.remote_path_edit.setText(self.remote_dir)
+                return
+        except FileNotFoundError:
             InfoBar.warning("提示", "远端目录不存在", duration=2000, parent=self.window())
+            self.remote_path_edit.setText(self.remote_dir)
+            return
+        except (paramiko.SSHException, IOError, OSError) as exc:
+            InfoBar.error("错误", f"无法访问远端目录: {exc}", duration=3000, parent=self.window())
             self.remote_path_edit.setText(self.remote_dir)
             return
         self.remote_dir = normalized
@@ -683,9 +579,9 @@ class FtpInterface(QWidget):
             self._set_local_path(directory)
 
     def _local_go_up(self):
-        parent = os.path.dirname(self.local_dir.rstrip("\\/"))
-        if parent and os.path.isdir(parent):
-            self._set_local_path(parent)
+        parent = Path(self.local_dir).parent
+        if parent.exists() and parent.is_dir():
+            self._set_local_path(str(parent))
 
     def _remote_go_up(self):
         if self.sftp is None:
@@ -709,7 +605,8 @@ class FtpInterface(QWidget):
     def _refresh_local_list(self):
         try:
             entries = []
-            for entry in os.scandir(self.local_dir):
+            local_path = Path(self.local_dir)
+            for entry in local_path.iterdir():
                 info = {
                     "name": entry.name,
                     "is_dir": entry.is_dir(),
@@ -719,7 +616,11 @@ class FtpInterface(QWidget):
                 entries.append(info)
             entries.sort(key=lambda item: (not item["is_dir"], item["name"].lower()))
             self._populate_table(self.local_table, entries)
-        except Exception as exc:
+        except PermissionError:
+            InfoBar.error("权限不足", "无法访问本地目录，请检查权限", duration=3000, parent=self.window())
+        except FileNotFoundError:
+            InfoBar.warning("目录不存在", f"本地目录不存在: {self.local_dir}", duration=3000, parent=self.window())
+        except OSError as exc:
             InfoBar.error("刷新失败", f"无法读取本地目录: {exc}", duration=3000, parent=self.window())
 
     def _refresh_remote_list(self):
@@ -738,7 +639,13 @@ class FtpInterface(QWidget):
                 entries.append(info)
             entries.sort(key=lambda item: (not item["is_dir"], item["name"].lower()))
             self._populate_table(self.remote_table, entries)
-        except Exception as exc:
+        except FileNotFoundError:
+            InfoBar.warning("目录不存在", f"远端目录不存在: {self.remote_dir}", duration=3000, parent=self.window())
+        except PermissionError:
+            InfoBar.error("权限不足", "无法访问远端目录，请检查权限", duration=3000, parent=self.window())
+        except paramiko.SSHException as exc:
+            InfoBar.error("SSH错误", f"无法读取远端目录: {exc}", duration=3000, parent=self.window())
+        except (IOError, OSError) as exc:
             InfoBar.error("刷新失败", f"无法读取远端目录: {exc}", duration=3000, parent=self.window())
 
     def _populate_table(self, table, entries):
@@ -793,7 +700,7 @@ class FtpInterface(QWidget):
         data = self.local_table.item(row, 0).data(Qt.UserRole)
         if not data:
             return None
-        full_path = os.path.join(self.local_dir, data["name"])
+        full_path = str(Path(self.local_dir) / data["name"])
         return data, full_path
 
     def _get_selected_remote_item(self):
@@ -814,11 +721,15 @@ class FtpInterface(QWidget):
         name, ok = QInputDialog.getText(self, "新建文件夹", "请输入文件夹名称:")
         if not ok or not name:
             return
-        path = os.path.join(self.local_dir, name)
+        path = Path(self.local_dir) / name
         try:
-            os.makedirs(path, exist_ok=False)
+            path.mkdir(parents=False, exist_ok=False)
             self._refresh_local_list()
-        except Exception as exc:
+        except FileExistsError:
+            InfoBar.warning("创建失败", f"文件夹已存在: {name}", duration=2000, parent=self.window())
+        except PermissionError:
+            InfoBar.error("权限不足", "无法创建文件夹，请检查权限", duration=3000, parent=self.window())
+        except OSError as exc:
             InfoBar.error("创建失败", f"无法创建本地文件夹: {exc}", duration=3000, parent=self.window())
 
     def _remote_mkdir(self):
@@ -831,7 +742,13 @@ class FtpInterface(QWidget):
         try:
             self.sftp.mkdir(path)
             self._refresh_remote_list()
-        except Exception as exc:
+        except FileExistsError:
+            InfoBar.warning("创建失败", f"远端文件夹已存在: {name}", duration=2000, parent=self.window())
+        except PermissionError:
+            InfoBar.error("权限不足", "无法创建远端文件夹，请检查权限", duration=3000, parent=self.window())
+        except paramiko.SSHException as exc:
+            InfoBar.error("SSH错误", f"无法创建远端文件夹: {exc}", duration=3000, parent=self.window())
+        except (IOError, OSError) as exc:
             InfoBar.error("创建失败", f"无法创建远端文件夹: {exc}", duration=3000, parent=self.window())
 
     def _local_rename(self):
@@ -842,11 +759,17 @@ class FtpInterface(QWidget):
         name, ok = QInputDialog.getText(self, "重命名", "请输入新的名称:", text=data["name"])
         if not ok or not name or name == data["name"]:
             return
-        target = os.path.join(self.local_dir, name)
+        target = Path(self.local_dir) / name
         try:
-            os.rename(full_path, target)
+            Path(full_path).rename(target)
             self._refresh_local_list()
-        except Exception as exc:
+        except FileExistsError:
+            InfoBar.warning("重命名失败", f"目标文件已存在: {name}", duration=2000, parent=self.window())
+        except FileNotFoundError:
+            InfoBar.warning("重命名失败", f"源文件不存在: {data['name']}", duration=2000, parent=self.window())
+        except PermissionError:
+            InfoBar.error("权限不足", "无法重命名文件，请检查权限", duration=3000, parent=self.window())
+        except OSError as exc:
             InfoBar.error("重命名失败", f"无法重命名本地文件: {exc}", duration=3000, parent=self.window())
 
     def _remote_rename(self):
@@ -861,7 +784,15 @@ class FtpInterface(QWidget):
         try:
             self.sftp.rename(full_path, target)
             self._refresh_remote_list()
-        except Exception as exc:
+        except FileExistsError:
+            InfoBar.warning("重命名失败", f"远端目标文件已存在: {name}", duration=2000, parent=self.window())
+        except FileNotFoundError:
+            InfoBar.warning("重命名失败", f"远端源文件不存在: {data['name']}", duration=2000, parent=self.window())
+        except PermissionError:
+            InfoBar.error("权限不足", "无法重命名远端文件，请检查权限", duration=3000, parent=self.window())
+        except paramiko.SSHException as exc:
+            InfoBar.error("SSH错误", f"无法重命名远端文件: {exc}", duration=3000, parent=self.window())
+        except (IOError, OSError) as exc:
             InfoBar.error("重命名失败", f"无法重命名远端文件: {exc}", duration=3000, parent=self.window())
 
     def _local_delete(self):
@@ -876,12 +807,17 @@ class FtpInterface(QWidget):
         if reply != QMessageBox.Yes:
             return
         try:
+            path_obj = Path(full_path)
             if data["is_dir"]:
                 shutil.rmtree(full_path)
             else:
-                os.remove(full_path)
+                path_obj.unlink()
             self._refresh_local_list()
-        except Exception as exc:
+        except FileNotFoundError:
+            InfoBar.warning("删除失败", f"文件不存在: {data['name']}", duration=2000, parent=self.window())
+        except PermissionError:
+            InfoBar.error("权限不足", "无法删除文件，请检查权限", duration=3000, parent=self.window())
+        except OSError as exc:
             InfoBar.error("删除失败", f"无法删除本地文件: {exc}", duration=3000, parent=self.window())
 
     def _remote_delete(self):
@@ -898,7 +834,13 @@ class FtpInterface(QWidget):
         try:
             self._delete_remote_path(full_path, data["is_dir"])
             self._refresh_remote_list()
-        except Exception as exc:
+        except FileNotFoundError:
+            InfoBar.warning("删除失败", f"远端文件不存在: {data['name']}", duration=2000, parent=self.window())
+        except PermissionError:
+            InfoBar.error("权限不足", "无法删除远端文件，请检查权限", duration=3000, parent=self.window())
+        except paramiko.SSHException as exc:
+            InfoBar.error("SSH错误", f"无法删除远端文件: {exc}", duration=3000, parent=self.window())
+        except (IOError, OSError) as exc:
             InfoBar.error("删除失败", f"无法删除远端文件: {exc}", duration=3000, parent=self.window())
 
     def _delete_remote_path(self, path, is_dir):
@@ -945,7 +887,7 @@ class FtpInterface(QWidget):
             if not selected:
                 return
             data, remote_path = selected
-            local_path = os.path.join(self.local_dir, data["name"])
+            local_path = str(Path(self.local_dir) / data["name"])
 
         host = self.host_edit.text().strip()
         username = self.user_edit.text().strip()
@@ -955,10 +897,11 @@ class FtpInterface(QWidget):
             "refresh_remote": action == "upload" or delete_source,
         }
         self._set_transfer_in_progress(True, "传输中...")
-        self._transfer_worker = TransferWorker(
-            host, username, password, action, local_path, remote_path, delete_source
+        # 使用统一的SFTPTransferWorker
+        self._transfer_worker = SFTPTransferWorker(
+            host, username, password, action, local_path, remote_path, delete_source, timeout=30
         )
-        self._transfer_worker.finished_signal.connect(self._on_transfer_finished)
+        self._transfer_worker.transfer_finished.connect(self._on_transfer_finished)
         self._transfer_worker.start()
 
     def _on_transfer_finished(self, success, message):

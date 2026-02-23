@@ -74,7 +74,7 @@ def generate_cpp_header(doc: Dict[str, Any], source_path: Optional[str] = None) 
     h.append("    }")
     h.append("")
 
-    h.append("private:")
+    h.append("// private:")
     h.append("    template <typename T>")
     h.append("    struct DynamicSequence {")
     h.append("        std::vector<T> data_;")

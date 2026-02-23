@@ -9,10 +9,12 @@ import zipfile
 import shutil
 import subprocess
 from datetime import datetime
+from pathlib import Path
 
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
-    QLabel, QFrame, QScrollArea, QFileDialog, QProgressBar, QMessageBox
+    QLabel, QFrame, QScrollArea, QFileDialog, QProgressBar, QMessageBox,
+    QApplication
 )
 from PyQt5.QtCore import Qt, QThread, pyqtSignal
 from PyQt5.QtGui import QFont
@@ -23,6 +25,7 @@ from qfluentwidgets import (
     CheckBox, ToolButton, ProgressBar, TextEdit
 )
 import winreg
+import ctypes
 from core.font_manager import FontManager
 from core.config_manager import get_program_dir
 
@@ -98,12 +101,18 @@ class InstallThread(QThread):
             self.finished.emit(True, "安装完成！")
             self.log_update.emit(f"\n✅ 安装成功完成！")
 
-        except Exception as e:
-            self.finished.emit(False, f"安装过程出错: {str(e)}")
-            self.log_update.emit(f"❌ 错误: {str(e)}")
+        except subprocess.SubprocessError as e:
+            self.finished.emit(False, f"安装命令执行失败: {str(e)}")
+            self.log_update.emit(f"❌ 命令执行错误: {str(e)}")
+        except OSError as e:
+            self.finished.emit(False, f"系统错误: {str(e)}")
+            self.log_update.emit(f"❌ 系统错误: {str(e)}")
+        except zipfile.BadZipFile as e:
+            self.finished.emit(False, f"压缩文件损坏: {str(e)}")
+            self.log_update.emit(f"❌ 压缩文件错误: {str(e)}")
 
     def _install_cmake(self, target_dir, source_dir):
-        msi_path = os.path.join(source_dir, "cmake.msi")
+        msi_path = str(Path(source_dir) / "cmake.msi")
         if not os.path.exists(msi_path):
             self.log_update.emit(f"⚠️ 未找到 cmake.msi，跳过此步骤")
             return False
@@ -117,13 +126,19 @@ class InstallThread(QThread):
             )
             self.log_update.emit(f"✅ CMake 安装完成")
             return True
-        except Exception as e:
+        except subprocess.CalledProcessError as e:
+            self.log_update.emit(f"❌ CMake 安装失败: 返回码 {e.returncode}")
+            return False
+        except subprocess.SubprocessError as e:
             self.log_update.emit(f"❌ CMake 安装失败: {str(e)}")
+            return False
+        except FileNotFoundError:
+            self.log_update.emit(f"❌ msiexec 命令未找到")
             return False
 
     def _install_openssh(self, target_dir, source_dir):
         """安装 OpenSSH"""
-        msi_path = os.path.join(source_dir, "OpenSSH.msi")
+        msi_path = str(Path(source_dir) / "OpenSSH.msi")
         if not os.path.exists(msi_path):
             self.log_update.emit(f"⚠️ 未找到 OpenSSH.msi，跳过此步骤")
             return False
@@ -137,8 +152,14 @@ class InstallThread(QThread):
             )
             self.log_update.emit(f"✅ OpenSSH 安装完成")
             return True
-        except Exception as e:
+        except subprocess.CalledProcessError as e:
+            self.log_update.emit(f"❌ OpenSSH 安装失败: 返回码 {e.returncode}")
+            return False
+        except subprocess.SubprocessError as e:
             self.log_update.emit(f"❌ OpenSSH 安装失败: {str(e)}")
+            return False
+        except FileNotFoundError:
+            self.log_update.emit(f"❌ msiexec 命令未找到")
             return False
 
     def _extract_zip(self, zip_path, target_path, name):
@@ -148,8 +169,9 @@ class InstallThread(QThread):
             return False
 
         self.log_update.emit(f"📦 正在安装 {name} 到 {target_path}")
+        target_path_obj = Path(target_path)
         try:
-            os.makedirs(target_path, exist_ok=True)
+            target_path_obj.mkdir(parents=True, exist_ok=True)
             with zipfile.ZipFile(zip_path, 'r') as zip_ref:
                 # 获取文件列表
                 file_list = zip_ref.namelist()
@@ -165,35 +187,41 @@ class InstallThread(QThread):
 
             self.log_update.emit(f"✅ {name} 安装完成")
             return True
-        except Exception as e:
+        except zipfile.BadZipFile:
+            self.log_update.emit(f"❌ 安装 {name} 失败: 压缩文件损坏或格式不支持")
+            return False
+        except PermissionError:
+            self.log_update.emit(f"❌ 安装 {name} 失败: 权限不足")
+            return False
+        except OSError as e:
             self.log_update.emit(f"❌ 安装 {name} 失败: {str(e)}")
             return False
 
     def _extract_toolchain(self, target_dir, source_dir):
         return self._extract_zip(
-            os.path.join(source_dir, "Toolchain"),
+            str(Path(source_dir) / "Toolchain"),
             target_dir,
             "工具链"
         )
 
     def _extract_libs(self, target_dir, source_dir):
         return self._extract_zip(
-            os.path.join(source_dir, "libs"),
+            str(Path(source_dir) / "libs"),
             target_dir,
             "库文件"
         )
 
     def _extract_mingw(self, target_dir, source_dir):
         return self._extract_zip(
-            os.path.join(source_dir, "mingw64"),
+            str(Path(source_dir) / "mingw64"),
             target_dir,
             "MinGW64"
         )
 
     def _extract_vscode(self, target_dir, source_dir):
-        vscode_dir = os.path.join(target_dir, "VSCode")
+        vscode_dir = str(Path(target_dir) / "VSCode")
         result = self._extract_zip(
-            os.path.join(source_dir, "VSCode"),
+            str(Path(source_dir) / "VSCode"),
             vscode_dir,
             "VSCode"
         )
@@ -207,14 +235,14 @@ class InstallThread(QThread):
     def _create_vscode_shortcut(self, vscode_dir):
         """创建 VSCode 桌面快捷方式"""
         try:
-            code_exe = os.path.join(vscode_dir, "Code.exe")
-            if not os.path.exists(code_exe):
+            code_exe = Path(vscode_dir) / "Code.exe"
+            if not code_exe.exists():
                 self.log_update.emit(f"⚠️ 未找到 Code.exe，跳过创建快捷方式")
                 return
 
             # 获取桌面路径
-            desktop = os.path.join(os.path.expanduser("~"), "Desktop")
-            shortcut_path = os.path.join(desktop, "Code.lnk")
+            desktop = Path.home() / "Desktop"
+            shortcut_path = str(desktop / "Code.lnk")
 
             # 使用 PowerShell 创建快捷方式
             ps_script = f'''
@@ -235,42 +263,47 @@ class InstallThread(QThread):
 
             self.log_update.emit(f"✅ 已创建桌面快捷方式: {shortcut_path}")
 
-        except Exception as e:
+        except subprocess.CalledProcessError as e:
+            self.log_update.emit(f"⚠️ 创建快捷方式失败: PowerShell 返回错误 (返回码 {e.returncode})")
+        except subprocess.SubprocessError as e:
+            self.log_update.emit(f"⚠️ 创建快捷方式失败: {str(e)}")
+        except OSError as e:
             self.log_update.emit(f"⚠️ 创建快捷方式失败: {str(e)}")
 
     def _add_to_path(self, target_dir):
         """添加到系统 PATH"""
         paths_to_add = []
+        target_path = Path(target_dir)
 
         # MinGW64 bin
-        mingw_bin = os.path.join(target_dir, "mingw64", "bin")
-        if os.path.exists(mingw_bin):
-            paths_to_add.append(mingw_bin)
+        mingw_bin = target_path / "mingw64" / "bin"
+        if mingw_bin.exists():
+            paths_to_add.append(str(mingw_bin))
 
         # ARM Toolchain bin
-        toolchain_base = os.path.join(target_dir, "Arm GNU Toolchain aarch64-none-linux-gnu")
-        if os.path.exists(toolchain_base):
-            for item in os.listdir(toolchain_base):
-                item_path = os.path.join(toolchain_base, item, "bin")
-                if os.path.exists(item_path):
-                    paths_to_add.append(item_path)
+        toolchain_base = target_path / "Arm GNU Toolchain aarch64-none-linux-gnu"
+        if toolchain_base.exists():
+            for item in toolchain_base.iterdir():
+                item_path = item / "bin"
+                if item_path.exists():
+                    paths_to_add.append(str(item_path))
                     break
 
         # CMake bin (如果安装了CMake)
-        cmake_bin = r"C:\Program Files\CMake\bin"
-        if os.path.exists(cmake_bin):
-            paths_to_add.append(cmake_bin)
+        cmake_bin = Path(r"C:\Program Files\CMake\bin")
+        if cmake_bin.exists():
+            paths_to_add.append(str(cmake_bin))
 
         # VSCode (如果安装了VSCode)
-        vscode_dir = os.path.join(target_dir, "VSCode")
-        if os.path.exists(vscode_dir):
+        vscode_dir = target_path / "VSCode"
+        if vscode_dir.exists():
             # 优先添加 bin 目录 (包含 code 命令)
-            vscode_bin = os.path.join(vscode_dir, "bin")
-            if os.path.exists(vscode_bin):
-                paths_to_add.append(vscode_bin)
+            vscode_bin = vscode_dir / "bin"
+            if vscode_bin.exists():
+                paths_to_add.append(str(vscode_bin))
             # 同时也添加根目录 (包含 Code.exe)
-            if os.path.exists(os.path.join(vscode_dir, "Code.exe")):
-                paths_to_add.append(vscode_dir)
+            if (vscode_dir / "Code.exe").exists():
+                paths_to_add.append(str(vscode_dir))
 
         # 添加到用户环境变量
         try:
@@ -320,23 +353,24 @@ class InstallThread(QThread):
             if added_count == 0:
                 self.log_update.emit(f"ℹ️ 所有路径已在 PATH 中")
 
-        except Exception as e:
+        except PermissionError:
+            self.log_update.emit(f"❌ 更新 PATH 失败: 权限不足，请以管理员身份运行")
+        except OSError as e:
             self.log_update.emit(f"❌ 更新 PATH 失败: {str(e)}")
 
     def _extract_vscode_extensions(self, target_dir, source_dir):
         """安装VSCode插件"""
-        extensions_file = os.path.join(source_dir, "extensions")
-        if not os.path.exists(extensions_file):
+        extensions_file = str(Path(source_dir) / "extensions")
+        if not Path(extensions_file).exists():
             self.log_update.emit(f"⚠️ 未找到 extensions，跳过VSCode插件安装")
             return False
 
         # 获取当前用户目录
-        user_home = os.path.expanduser("~")
-        vscode_extensions_dir = os.path.join(user_home, ".vscode")
+        vscode_extensions_dir = Path.home() / ".vscode"
 
         self.log_update.emit(f"📦 正在安装VSCode插件到 {vscode_extensions_dir}")
         try:
-            os.makedirs(vscode_extensions_dir, exist_ok=True)
+            vscode_extensions_dir.mkdir(parents=True, exist_ok=True)
             with zipfile.ZipFile(extensions_file, 'r') as zip_ref:
                 file_list = zip_ref.namelist()
                 total_files = len(file_list)
@@ -344,14 +378,20 @@ class InstallThread(QThread):
                 for i, file in enumerate(file_list):
                     if not self.is_running:
                         return False
-                    zip_ref.extract(file, vscode_extensions_dir)
+                    zip_ref.extract(file, str(vscode_extensions_dir))
                     if i % 10 == 0:
                         progress = int((i + 1) * 100 / total_files)
                         self.progress_update.emit(f"安装VSCode插件", progress)
 
             self.log_update.emit(f"✅ VSCode插件安装完成")
             return True
-        except Exception as e:
+        except zipfile.BadZipFile:
+            self.log_update.emit(f"❌ 安装VSCode插件失败: 压缩文件损坏")
+            return False
+        except PermissionError:
+            self.log_update.emit(f"❌ 安装VSCode插件失败: 权限不足")
+            return False
+        except OSError as e:
             self.log_update.emit(f"❌ 安装VSCode插件失败: {str(e)}")
             return False
 
@@ -368,13 +408,15 @@ class InstallThread(QThread):
             }
         }
 
-        info_path = os.path.join(target_dir, "openEuler_install_info.json")
+        info_path = Path(target_dir) / "openEuler_install_info.json"
         try:
-            os.makedirs(target_dir, exist_ok=True)
+            info_path.parent.mkdir(parents=True, exist_ok=True)
             with open(info_path, 'w', encoding='utf-8') as f:
                 json.dump(info, f, indent=2, ensure_ascii=False)
             self.log_update.emit(f"✅ 安装信息已写入")
-        except Exception as e:
+        except PermissionError:
+            self.log_update.emit(f"⚠️ 写入安装信息失败: 权限不足")
+        except OSError as e:
             self.log_update.emit(f"⚠️ 写入安装信息失败: {str(e)}")
 
 
@@ -393,7 +435,14 @@ class EnvironmentInstallInterface(QWidget):
         self.init_ui()
 
     def _get_source_dir(self):
-        return os.path.join(self.program_dir, "modules")
+        return str(Path(self.program_dir) / "modules")
+
+    def _is_admin(self):
+        """检查是否以管理员权限运行"""
+        try:
+            return ctypes.windll.shell32.IsUserAnAdmin()
+        except Exception:
+            return False
 
     def init_ui(self):
         """初始化界面"""
@@ -410,6 +459,25 @@ class EnvironmentInstallInterface(QWidget):
         desc = BodyLabel("配置 openEuler 开发所需的编译工具链、依赖库和开发工具")
         desc.setStyleSheet(f"color: #5A6A7A; font-size: {FontManager.get_font_size('body')}px;")
         layout.addWidget(desc)
+
+        # 管理员权限提示
+        if not self._is_admin():
+            admin_warning = CardWidget()
+            admin_warning.setStyleSheet("""
+                CardWidget {
+                    background-color: #FFF3CD;
+                    border: 2px solid #FFC107;
+                    border-radius: 8px;
+                }
+            """)
+            warning_layout = QHBoxLayout(admin_warning)
+            warning_layout.setContentsMargins(16, 12, 16, 12)
+
+            warning_text = BodyLabel("⚠️ 注意应以管理员身份运行：否则 CMake 和 OpenSSH 安装可能失败")
+            warning_text.setStyleSheet("color: #856404; font-size: 14px; font-weight: bold;")
+
+            warning_layout.addWidget(warning_text, 1)
+            layout.addWidget(admin_warning)
 
         # 滚动区域
         scroll = QScrollArea()
@@ -431,6 +499,30 @@ class EnvironmentInstallInterface(QWidget):
         # 操作按钮
         button_layout = QHBoxLayout()
         button_layout.addStretch()
+
+        # 如果不是管理员，显示"以管理员身份安装"按钮
+        if not self._is_admin():
+            self.elevate_btn = PushButton("🛡️ 以管理员身份运行")
+            self.elevate_btn.setFixedSize(200, 40)
+            self.elevate_btn.setStyleSheet("""
+                PushButton {
+                    background-color: #FFFFFF;
+                    color: #2D3748;
+                    border: 1px solid #E2E8F0;
+                    border-radius: 6px;
+                    font-weight: bold;
+                }
+                PushButton:hover {
+                    background-color: #F7FAFC;
+                    border-color: #CBD5E0;
+                }
+                PushButton:pressed {
+                    background-color: #EDF2F7;
+                }
+            """)
+            self.elevate_btn.clicked.connect(self._restart_as_admin)
+            button_layout.addWidget(self.elevate_btn)
+            button_layout.addSpacing(20)
 
         self.start_btn = PrimaryPushButton("开始安装")
         self.start_btn.setFixedSize(140, 40)
@@ -564,8 +656,8 @@ class EnvironmentInstallInterface(QWidget):
 
             # 检查文件是否存在
             if filename:
-                file_path = os.path.join(self.source_dir, filename)
-                if not os.path.exists(file_path):
+                file_path = Path(self.source_dir) / filename
+                if not file_path.exists():
                     checkbox.setChecked(False)
                     checkbox.setEnabled(False)
                     name_label = BodyLabel(f" ({filename} 未找到)")
@@ -596,8 +688,8 @@ class EnvironmentInstallInterface(QWidget):
         vscode_checkbox.setStyleSheet("color: #2D3748;")
 
         # 检查 VSCode 是否存在
-        vscode_path = os.path.join(self.source_dir, "VSCode")
-        if not os.path.exists(vscode_path):
+        vscode_path = Path(self.source_dir) / "VSCode"
+        if not vscode_path.exists():
             vscode_checkbox.setChecked(False)
             vscode_checkbox.setEnabled(False)
             vscode_label = BodyLabel(" (VSCode 未找到)")
@@ -622,8 +714,8 @@ class EnvironmentInstallInterface(QWidget):
         self.vscode_ext_checkbox.setStyleSheet("color: #5A6A7A;")
 
         # 检查 extensions 是否存在
-        extensions_path = os.path.join(self.source_dir, "extensions")
-        if not os.path.exists(extensions_path):
+        extensions_path = Path(self.source_dir) / "extensions"
+        if not extensions_path.exists():
             self.vscode_ext_checkbox.setChecked(False)
             self.vscode_ext_checkbox.setEnabled(False)
             ext_label = BodyLabel(" (extensions 未找到)")
@@ -691,6 +783,50 @@ class EnvironmentInstallInterface(QWidget):
     def _log(self, message):
         """添加日志"""
         self.log_text.append(message)
+
+    def _restart_as_admin(self):
+        """以管理员身份重新启动程序（支持Win7/Win10/Win11）"""
+        import sys
+
+        try:
+            # 获取当前可执行文件路径
+            if getattr(sys, 'frozen', False):
+                # PyInstaller打包后的程序
+                program = sys.executable
+                params = ""
+            else:
+                # Python脚本模式 - 需要启动python.exe并传入脚本
+                program = sys.executable
+                # 构建参数：脚本路径 + 其他参数
+                script_path = os.path.abspath(sys.argv[0])
+                params = f'"{script_path}"'
+                if len(sys.argv) > 1:
+                    params += " " + " ".join(f'"{arg}"' for arg in sys.argv[1:])
+
+            # 使用ShellExecuteW请求提升权限（Win7+支持）
+            ret = ctypes.windll.shell32.ShellExecuteW(
+                None,           # hwnd
+                "runas",        # lpOperation - 请求管理员权限
+                program,        # lpFile
+                params,         # lpParameters
+                None,           # lpDirectory
+                1               # nShowCmd - SW_SHOWNORMAL
+            )
+
+            # 检查返回值：
+            # > 32 表示成功
+            # <= 32 表示失败（Win7下常见错误码：
+            #   5 = 用户拒绝UAC，8 = 内存不足，31 = 没有关联程序等）
+            if ret > 32:
+                # 成功启动，关闭当前实例
+                QApplication.quit()
+            elif ret == 5:
+                QMessageBox.information(self, "提示", "您取消了权限提升。\n部分组件可能无法正常安装。")
+            else:
+                QMessageBox.warning(self, "警告", f"无法启动管理员权限程序（错误码：{ret}）")
+
+        except Exception as e:
+            QMessageBox.critical(self, "错误", f"权限提升失败：{e}")
 
     def _start_install(self):
         """开始安装"""

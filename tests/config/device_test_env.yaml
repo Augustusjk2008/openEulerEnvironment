@@ -1,0 +1,175 @@
+# 真实设备测试环境配置
+# 重要警告：
+# - 本配置仅用于真实目标板 192.168.1.29
+# - 绝对禁止在 Ubuntu 虚拟机 (192.168.56.132) 执行设备初始化测试
+# - 必须设置 REAL_DEVICE_TEST=1 环境变量才执行测试
+# - 默认情况下（无环境变量）自动跳过
+
+# 目标设备配置
+device:
+  host: "192.168.1.29"
+  port: 22
+  username: "root"
+  password: "${DEVICE_PASSWORD}"  # 通过环境变量 DEVICE_PASSWORD 设置
+  # 或者使用密钥认证（推荐用于自动化）
+  # private_key: "~/.ssh/device_key"
+  # passphrase: "${DEVICE_KEY_PASSPHRASE}"
+
+# SSH连接配置
+ssh:
+  timeout: 30           # 连接超时时间（秒）
+  retry_count: 3        # 重试次数
+  retry_delay: 2        # 重试间隔（秒）
+  banner_timeout: 30    # SSH banner超时时间
+  auth_timeout: 30      # 认证超时时间
+
+# SFTP配置
+sftp:
+  chunk_size: 8192      # 文件传输块大小（字节）
+  verify_checksum: true # 是否验证文件校验和
+  max_concurrent: 3     # 最大并发传输数
+
+# 初始化步骤配置
+# 对应 InitializerInterface 中的8步初始化流程
+init_steps:
+  - id: step0
+    name: "ssh_connection"
+    description: "建立SSH连接"
+    required: true
+    timeout: 30
+
+  - id: step1
+    name: "set_root_password"
+    description: "设置root密码"
+    required: true
+    timeout: 10
+    verification: "password_login"
+
+  - id: step2
+    name: "create_directories"
+    description: "创建目录结构"
+    required: true
+    timeout: 10
+    directories:
+      - "/home/sast8"
+      - "/home/sast8/user_tests"
+      - "/home/sast8/user_apps"
+      - "/home/sast8/user_libs"
+      - "/home/sast8/user_libs/shared_libs"
+      - "/home/sast8/user_libs/static_libs"
+      - "/home/sast8/user_modules"
+      - "/home/sast8/user_modules/resize"
+      - "/home/sast8/user_modules/xdma_803"
+      - "/home/sast8/user_tmp"
+
+  - id: step3
+    name: "upload_files"
+    description: "上传文件到目标设备"
+    required: false
+    timeout: 60
+    source_path: "files_to_upload"
+    target_path: "/"
+
+  - id: step4
+    name: "configure_ld_library_path"
+    description: "配置动态库路径"
+    required: true
+    timeout: 10
+    config_file: "/etc/ld.so.conf.d/sast8_libs.conf"
+    library_path: "/home/sast8/user_libs/shared_libs"
+
+  - id: step5
+    name: "expand_partition"
+    description: "硬盘扩容"
+    required: false
+    timeout: 120
+    resize_binary: "/home/sast8/user_modules/resize/resize2fs-arm64"
+    target_partition: "/dev/mmcblk0p3"
+    warning: "此操作耗时较长，可能影响系统性能"
+
+  - id: step6
+    name: "run_security_tests"
+    description: "执行安全测试"
+    required: false
+    timeout: 60
+    test_scripts:
+      - "/home/sast8/user_tmp/device_hash_and_sign.sh"
+      - "/home/sast8/user_tmp/test_secure"
+    cleanup: true
+
+  - id: step7
+    name: "configure_time"
+    description: "配置系统时间"
+    required: true
+    timeout: 10
+    time_format: "%Y-%m-%d %H:%M:%S"
+    timezone: "Asia/Shanghai"
+
+  - id: step8
+    name: "reboot_confirm"
+    description: "重启系统并确认"
+    required: false
+    timeout: 300
+    reboot_delay: 10
+    max_wait: 300
+    warning: "此操作会重启目标设备，请确保不影响其他测试"
+
+# 测试数据配置
+test_data:
+  base_dir: "tests/test_data/device"
+  upload_dir: "tests/test_data/device/uploads"
+  download_dir: "tests/test_data/device/downloads"
+  temp_dir: "tests/test_data/device/temp"
+  # 测试文件列表
+  test_files:
+    - name: "test_upload.txt"
+      content: "Device initialization test file"
+    - name: "test_script.sh"
+      content: "#!/bin/bash\necho 'Test script executed'"
+      executable: true
+
+# 验证点配置
+verification:
+  # SSH连接验证
+  ssh:
+    - "whoami"
+    - "uname -a"
+    - "cat /etc/os-release"
+
+  # 目录结构验证
+  directories:
+    - path: "/home/sast8"
+      owner: "root"
+      permissions: "755"
+    - path: "/home/sast8/user_libs/shared_libs"
+      owner: "root"
+      permissions: "755"
+
+  # 配置文件验证
+  config_files:
+    - path: "/etc/ld.so.conf.d/sast8_libs.conf"
+      content_pattern: "/home/sast8/user_libs/shared_libs"
+
+  # 系统状态验证
+  system:
+    - command: "df -h"
+      description: "磁盘使用情况"
+    - command: "free -m"
+      description: "内存使用情况"
+    - command: "uptime"
+      description: "系统运行时间"
+
+# 环境控制变量说明
+environment_variables:
+  REAL_DEVICE_TEST: "设置为1启用真实设备测试"
+  DEVICE_PASSWORD: "目标设备root密码"
+  DEVICE_KEY_PASSPHRASE: "SSH密钥密码（如使用密钥认证）"
+  TEST_VERBOSE: "设置为1启用详细日志输出"
+
+# 安全警告
+security_warnings:
+  - "绝对禁止在 Ubuntu 虚拟机 (192.168.56.132) 执行设备初始化测试"
+  - "设备初始化测试仅针对 192.168.1.29 执行"
+  - "测试前确认目标设备IP地址正确"
+  - "测试过程中可能重启目标设备，确保不影响其他测试"
+  - "硬盘扩容操作不可逆，请确保数据已备份"

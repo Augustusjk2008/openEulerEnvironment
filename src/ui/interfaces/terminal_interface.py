@@ -19,6 +19,7 @@ from qfluentwidgets import (
 )
 from core.config_manager import get_config_manager
 from core.font_manager import FontManager
+from core.ssh_utils import SSHClientFactory, SSHConnectWorker
 
 
 HISTORY_LINES = 2000
@@ -42,50 +43,6 @@ ANSI_COLOR_MAP = {
     "brightcyan": "#29b8db",
     "brightwhite": "#ffffff",
 }
-
-
-class SshConnectWorker(QObject):
-    connected = pyqtSignal(object)
-    failed = pyqtSignal(str, str)
-    finished = pyqtSignal()
-
-    def __init__(self, host, username, password, timeout=10):
-        super().__init__()
-        self.host = host
-        self.username = username
-        self.password = password
-        self.timeout = timeout
-
-    @pyqtSlot()
-    def run(self):
-        client = paramiko.SSHClient()
-        client.load_system_host_keys()
-        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        connect_kwargs = {
-            "hostname": self.host,
-            "username": self.username,
-            "timeout": self.timeout,
-        }
-        if self.password:
-            connect_kwargs.update({
-                "password": self.password,
-                "look_for_keys": False,
-                "allow_agent": False,
-            })
-        try:
-            client.connect(**connect_kwargs)
-            self.connected.emit(client)
-        except paramiko.BadHostKeyException as exc:
-            client.close()
-            self.failed.emit("bad_host_key", str(exc))
-        except paramiko.AuthenticationException as exc:
-            client.close()
-            self.failed.emit("auth", str(exc))
-        except Exception as exc:
-            client.close()
-            self.failed.emit("error", str(exc))
-        finally:
-            self.finished.emit()
 
 
 class TerminalTextEdit(TextEdit):
@@ -208,6 +165,12 @@ class TerminalInterface(QWidget):
         self._format_cache = {}
         self._default_fg = QColor("#D4D4D4")
         self._default_bg = QColor("#1E1E1E")
+        # 增量更新优化：保存上一帧屏幕状态
+        self._last_screen_lines = []
+        self._last_cursor_pos = None
+        # 批量数据处理
+        self._pending_data = []
+        self._pending_timer = None
         self._default_format = QTextCharFormat()
         self._default_format.setForeground(self._default_fg)
         self._default_format.setBackground(self._default_bg)
@@ -383,16 +346,23 @@ class TerminalInterface(QWidget):
         return card
 
     def _load_defaults(self):
-        self.host_edit.setText(self.config_manager.get("ssh_host", "192.168.137.100"))
-        self.user_edit.setText(self.config_manager.get("ssh_username", "root"))
-        self.pass_edit.setText(self.config_manager.get("ssh_password", "Shanghaith8"))
+        # 从配置文件加载SSH连接信息，无默认值（避免硬编码敏感信息）
+        self.host_edit.setText(self.config_manager.get("ssh_host", ""))
+        self.user_edit.setText(self.config_manager.get("ssh_username", ""))
+        self.pass_edit.setText(self.config_manager.get("ssh_password", ""))
 
     def _init_process(self):
         self.key_fix_process.setProcessChannelMode(QProcess.MergedChannels)
         self.key_fix_process.readyReadStandardOutput.connect(self._on_key_fix_ready_read)
         self.key_fix_process.finished.connect(self._on_key_fix_finished)
-        self._poll_timer.setInterval(50)
+        # 优化：降低轮询频率从50ms到100ms，减少CPU占用
+        self._poll_timer.setInterval(100)
         self._poll_timer.timeout.connect(self._poll_ssh_output)
+        # 批量数据缓冲区，用于累积数据后统一处理
+        self._pending_data = []
+        self._pending_timer = QTimer(self)
+        self._pending_timer.setSingleShot(True)
+        self._pending_timer.timeout.connect(self._flush_pending_data)
 
     def _init_terminal_emulator(self):
         self._ensure_terminal_size()
@@ -422,7 +392,7 @@ class TerminalInterface(QWidget):
             if self.ssh_channel is not None and not self.ssh_channel.closed:
                 try:
                     self.ssh_channel.resize_pty(width=columns, height=lines)
-                except Exception:
+                except (paramiko.SSHException, IOError, OSError):
                     pass
 
     def _color_for(self, name, default_color):
@@ -515,11 +485,13 @@ class TerminalInterface(QWidget):
         self.status_label.setStyleSheet(f"color: #D97706; font-size: {FontManager.get_font_size('caption')}px;")
 
         thread = QThread(self)
-        worker = SshConnectWorker(host, username, password)
+        worker = SSHConnectWorker(host, username, password)
         worker.moveToThread(thread)
         thread.started.connect(worker.run)
         worker.connected.connect(self._on_connect_success)
-        worker.failed.connect(self._on_connect_failed)
+        worker.host_key_error.connect(self._on_host_key_error)
+        worker.auth_failed.connect(self._on_auth_failed)
+        worker.error_occurred.connect(self._on_error_occurred)
         worker.finished.connect(thread.quit)
         worker.finished.connect(worker.deleteLater)
         thread.finished.connect(thread.deleteLater)
@@ -538,12 +510,12 @@ class TerminalInterface(QWidget):
         if self.ssh_channel is not None:
             try:
                 self.ssh_channel.close()
-            except Exception:
+            except (paramiko.SSHException, IOError, OSError):
                 pass
         if self.ssh_client is not None:
             try:
                 self.ssh_client.close()
-            except Exception:
+            except (paramiko.SSHException, IOError, OSError):
                 pass
         self.ssh_channel = None
         self.ssh_client = None
@@ -558,13 +530,23 @@ class TerminalInterface(QWidget):
         self.status_label.setStyleSheet(f"color: #D83B01; font-size: {FontManager.get_font_size('caption')}px;")
         self._set_cursor_visible(False)
 
+    def _flush_pending_data(self):
+        """批量刷新累积的数据"""
+        if not self._pending_data:
+            return
+        # 合并所有待处理数据
+        combined_text = "".join(self._pending_data)
+        self._pending_data.clear()
+        self._append_output(combined_text)
+
     def _append_output(self, text):
         if not text:
             return
         if self._stream is None:
             self._ensure_terminal_size()
         self._stream.feed(text)
-        self._refresh_view()
+        # 使用增量更新而非全量重绘
+        self._refresh_view_incremental()
 
     def _send_raw(self, text):
         if self.ssh_channel is None or self.ssh_channel.closed:
@@ -576,7 +558,7 @@ class TerminalInterface(QWidget):
             else:
                 data = text
             self.ssh_channel.send(data)
-        except Exception:
+        except (paramiko.SSHException, IOError, OSError, UnicodeEncodeError):
             return
 
     def _handle_user_input(self, data):
@@ -591,19 +573,36 @@ class TerminalInterface(QWidget):
             return
 
         try:
-            if self.ssh_channel.recv_ready():
+            has_data = False
+            # 批量读取所有可用数据
+            while self.ssh_channel.recv_ready():
                 data = self.ssh_channel.recv(4096)
                 if data:
                     text = self._decoder.decode(data)
-                    self._append_output(text)
-            if self.ssh_channel.recv_stderr_ready():
+                    self._pending_data.append(text)
+                    has_data = True
+                else:
+                    break
+            while self.ssh_channel.recv_stderr_ready():
                 data = self.ssh_channel.recv_stderr(4096)
                 if data:
                     text = self._stderr_decoder.decode(data)
-                    self._append_output(text)
-        except Exception as exc:
+                    self._pending_data.append(text)
+                    has_data = True
+                else:
+                    break
+
+            # 有数据时启动延迟刷新定时器（批量处理）
+            if has_data:
+                if not self._pending_timer.isActive():
+                    self._pending_timer.start(50)  # 50ms后统一刷新
+
+        except (paramiko.SSHException, IOError, OSError) as exc:
             self._append_output(f"\r\n[连接异常] {exc}\r\n")
             self._stop_terminal()
+            return
+        except UnicodeDecodeError as exc:
+            self._append_output(f"\r\n[解码错误] 无法解码服务器响应: {exc}\r\n")
             return
 
         if self.ssh_channel.exit_status_ready() or self.ssh_channel.closed:
@@ -654,12 +653,20 @@ class TerminalInterface(QWidget):
         lines = self._screen.lines if self._screen is not None else MIN_LINES
         try:
             channel = client.invoke_shell(term="xterm", width=columns, height=lines)
-        except Exception as exc:
+        except paramiko.SSHException as exc:
             client.close()
             self.status_label.setText("SSH 连接失败")
             self.status_label.setStyleSheet(f"color: #D83B01; font-size: {FontManager.get_font_size('caption')}px;")
-            InfoBar.error("无法连接", f"连接 SSH 失败：{exc}", duration=4000, parent=self.window())
-            self._append_output(f"\r\n[连接失败] {exc}\r\n")
+            InfoBar.error("无法连接", f"SSH 会话创建失败：{exc}", duration=4000, parent=self.window())
+            self._append_output(f"\r\n[连接失败] SSH错误: {exc}\r\n")
+            self._set_cursor_visible(False)
+            return
+        except (IOError, OSError) as exc:
+            client.close()
+            self.status_label.setText("SSH 连接失败")
+            self.status_label.setStyleSheet(f"color: #D83B01; font-size: {FontManager.get_font_size('caption')}px;")
+            InfoBar.error("无法连接", f"I/O 错误：{exc}", duration=4000, parent=self.window())
+            self._append_output(f"\r\n[连接失败] I/O错误: {exc}\r\n")
             self._set_cursor_visible(False)
             return
 
@@ -673,7 +680,7 @@ class TerminalInterface(QWidget):
         self.status_label.setStyleSheet(f"color: #107C10; font-size: {FontManager.get_font_size('caption')}px;")
         self._set_cursor_visible(self.output_text.hasFocus())
 
-    def _on_connect_failed(self, error_type, message):
+    def _on_host_key_error(self, message):
         self._connect_in_progress = False
         self.connect_btn.setEnabled(True)
         if self._connect_cancelled:
@@ -683,19 +690,36 @@ class TerminalInterface(QWidget):
 
         self.status_label.setText("SSH 连接失败")
         self.status_label.setStyleSheet(f"color: #D83B01; font-size: {FontManager.get_font_size('caption')}px;")
-        if error_type == "bad_host_key":
-            self._key_fix_needed = True
-            self.fix_key_btn.setEnabled(True)
-            InfoBar.error("主机密钥异常", "检测到主机密钥异常，可点击“修复密钥”。", duration=4000, parent=self.window())
-            self._append_output(f"\r\n[主机密钥异常] {message}\r\n")
-            self._set_cursor_visible(False)
-            return
-        if error_type == "auth":
-            InfoBar.error("无法登录", "SSH 认证失败，请检查用户名或密码。", duration=4000, parent=self.window())
-            self._append_output(f"\r\n[认证失败] {message}\r\n")
-            self._set_cursor_visible(False)
+        self._key_fix_needed = True
+        self.fix_key_btn.setEnabled(True)
+        InfoBar.error("主机密钥异常", "检测到主机密钥异常，可点击“修复密钥”。", duration=4000, parent=self.window())
+        self._append_output(f"\r\n[主机密钥异常] {message}\r\n")
+        self._set_cursor_visible(False)
+
+    def _on_auth_failed(self, message):
+        self._connect_in_progress = False
+        self.connect_btn.setEnabled(True)
+        if self._connect_cancelled:
+            self.status_label.setText("SSH 已取消")
+            self.status_label.setStyleSheet(f"color: #D83B01; font-size: {FontManager.get_font_size('caption')}px;")
             return
 
+        self.status_label.setText("SSH 连接失败")
+        self.status_label.setStyleSheet(f"color: #D83B01; font-size: {FontManager.get_font_size('caption')}px;")
+        InfoBar.error("无法登录", "SSH 认证失败，请检查用户名或密码。", duration=4000, parent=self.window())
+        self._append_output(f"\r\n[认证失败] {message}\r\n")
+        self._set_cursor_visible(False)
+
+    def _on_error_occurred(self, message):
+        self._connect_in_progress = False
+        self.connect_btn.setEnabled(True)
+        if self._connect_cancelled:
+            self.status_label.setText("SSH 已取消")
+            self.status_label.setStyleSheet(f"color: #D83B01; font-size: {FontManager.get_font_size('caption')}px;")
+            return
+
+        self.status_label.setText("SSH 连接失败")
+        self.status_label.setStyleSheet(f"color: #D83B01; font-size: {FontManager.get_font_size('caption')}px;")
         InfoBar.error("无法连接", f"连接 SSH 失败：{message}", duration=4000, parent=self.window())
         self._append_output(f"\r\n[连接失败] {message}\r\n")
         self._set_cursor_visible(False)
@@ -734,6 +758,8 @@ class TerminalInterface(QWidget):
     def _clear_output(self):
         if self._screen is not None:
             self._screen.reset()
+        self._last_screen_lines = []
+        self._last_cursor_pos = None
         self._refresh_view()
 
     def _set_cursor_visible(self, visible):
@@ -747,13 +773,8 @@ class TerminalInterface(QWidget):
     def __del__(self):
         try:
             self._stop_terminal()
-        except Exception:
-            pass
-
-    def __del__(self):
-        try:
-            self._stop_terminal()
-        except Exception:
+        except (RuntimeError, AttributeError, TypeError):
+            # 忽略析构时可能出现的各种错误
             pass
 
     def _refresh_view(self):
@@ -806,3 +827,127 @@ class TerminalInterface(QWidget):
         end_cursor.movePosition(QTextCursor.End)
         self.output_text.setTextCursor(end_cursor)
         self.output_text.ensureCursorVisible()
+
+    def _needs_full_refresh(self, lines, cursor_line, cursor_col):
+        """判断是否需要全量刷新"""
+        # 首次渲染
+        if not self._last_screen_lines:
+            return True
+        # 行数变化
+        if len(self._last_screen_lines) != len(lines):
+            return True
+        # 光标移动超过一定距离
+        last_line, _ = self._last_cursor_pos or (None, None)
+        if last_line is not None and cursor_line is not None:
+            if abs(last_line - cursor_line) > 5:  # 光标跳跃超过5行
+                return True
+        return False
+
+    def _refresh_view_incremental(self):
+        """优化的视图刷新，减少不必要的重绘"""
+        if self._screen is None:
+            self.output_text.setPlainText("")
+            self._last_screen_lines = []
+            return
+
+        lines, history_len = self._collect_screen_lines()
+        cursor_line = history_len + self._screen.cursor.y if self._cursor_visible else None
+        cursor_col = self._screen.cursor.x if self._cursor_visible else None
+        if cursor_col is not None:
+            cursor_col = min(cursor_col, self._screen.columns - 1)
+
+        # 转换为可比较的行字符串
+        current_lines = [self._line_to_string(line) for line in lines]
+
+        # 判断是否需要全量刷新
+        if self._needs_full_refresh(lines, cursor_line, cursor_col):
+            self._refresh_view()
+            self._last_screen_lines = current_lines
+            self._last_cursor_pos = (cursor_line, cursor_col)
+            return
+
+        # 计算变更行数
+        changed_count = sum(1 for i, line in enumerate(current_lines)
+                           if i >= len(self._last_screen_lines) or self._last_screen_lines[i] != line)
+
+        # 变更太多时全量刷新更高效
+        if changed_count > len(lines) * 0.25:  # 超过25%行变更
+            self._refresh_view()
+            self._last_screen_lines = current_lines
+            self._last_cursor_pos = (cursor_line, cursor_col)
+            return
+
+        # 没有实际内容变更，只更新光标
+        if changed_count == 0 and self._last_cursor_pos == (cursor_line, cursor_col):
+            return
+
+        # 内容有变更，执行全量刷新（但跳过重绘后的光标定位）
+        self._refresh_view_fast(cursor_line, cursor_col)
+        self._last_screen_lines = current_lines
+        self._last_cursor_pos = (cursor_line, cursor_col)
+
+    def _line_to_string(self, line):
+        """将行转换为字符串用于比较"""
+        chars = []
+        for x in range(self._screen.columns):
+            cell = line[x]
+            data = cell.data or " "
+            chars.append(data)
+            if wcwidth(data) == 2:
+                chars.append(" ")
+        return "".join(chars)
+
+    def _refresh_view_fast(self, cursor_line, cursor_col):
+        """快速刷新，不移动光标到末尾"""
+        if self._screen is None:
+            return
+
+        lines, history_len = self._collect_screen_lines()
+
+        self.output_text.blockSignals(True)
+        doc = self.output_text.document()
+        doc.clear()
+        cursor = QTextCursor(doc)
+
+        for row_idx, line in enumerate(lines):
+            active_cursor_col = cursor_col if row_idx == cursor_line else None
+            right_bound = self._line_right_bound(line, active_cursor_col)
+            if right_bound >= 0:
+                current_fmt = None
+                run_text = []
+                skip_next = False
+                for x in range(min(right_bound + 1, self._screen.columns)):
+                    if skip_next:
+                        skip_next = False
+                        continue
+                    cell = line[x]
+                    char_data = cell.data or " "
+                    if active_cursor_col is not None and x == active_cursor_col:
+                        char_data = self._cursor_char
+                    fmt = self._format_for_char(cell)
+                    if fmt is not current_fmt:
+                        if run_text:
+                            cursor.insertText("".join(run_text), current_fmt or self._default_format)
+                            run_text = []
+                        current_fmt = fmt
+                    run_text.append(char_data)
+                    if wcwidth(char_data) == 2:
+                        skip_next = True
+                if run_text:
+                    cursor.insertText("".join(run_text), current_fmt or self._default_format)
+            if row_idx < len(lines) - 1:
+                cursor.insertText("\n", self._default_format)
+
+        self.output_text.blockSignals(False)
+
+        # 只在光标位置有效时移动光标
+        if cursor_line is not None:
+            cursor = self.output_text.textCursor()
+            cursor.movePosition(QTextCursor.Start)
+            for _ in range(cursor_line):
+                cursor.movePosition(QTextCursor.Down)
+            cursor.movePosition(QTextCursor.StartOfLine)
+            if cursor_col > 0:
+                cursor.movePosition(QTextCursor.Right, QTextCursor.MoveAnchor, min(cursor_col, self._screen.columns - 1))
+            self.output_text.setTextCursor(cursor)
+            self.output_text.ensureCursorVisible()

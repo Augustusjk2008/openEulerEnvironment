@@ -417,10 +417,10 @@ class SettingsInterface(QWidget):
         self.output_dir_edit.setText(self.config_manager.get("default_output_dir", r"C:\Projects"))
         self.install_dir_edit.setText(self.config_manager.get("default_install_dir", r"C:\openEulerTools"))
 
-        # 加载 SSH 设置
-        self.ssh_host_edit.setText(self.config_manager.get("ssh_host", "192.168.137.100"))
-        self.ssh_user_edit.setText(self.config_manager.get("ssh_username", "root"))
-        self.ssh_pass_edit.setText(self.config_manager.get("ssh_password", "Shanghaith8"))
+        # 加载 SSH 设置（从settings.json读取，无硬编码默认值）
+        self.ssh_host_edit.setText(self.config_manager.get("ssh_host", ""))
+        self.ssh_user_edit.setText(self.config_manager.get("ssh_username", ""))
+        self.ssh_pass_edit.setText(self.config_manager.get("ssh_password", ""))
 
         # 加载其他设置
         self.update_switch.setChecked(self.config_manager.get("auto_check_update", False))

@@ -1,0 +1,34 @@
+Release Date: 2026-02-02
+
+feat(protocol_editor): 新增协议建模编辑器功能
+
+实现协议结构编辑器界面，支持创建、编辑协议CSV文件并生成C++代码
+添加协议资产库管理功能，支持文件的新建、复制、重命名和删除
+集成协议字段类型选择、字节位置计算和有效性验证
+生成pack/unpack与序列化Schema的C++代码
+
+feat(protocol_editor): 新增协议导出Word文档功能
+
+- 实现协议字段导出为Word文档功能，支持表格格式展示字段信息
+- 添加计算位域位置和分组信息的工具函数
+- 优化代码生成逻辑，支持隐式数组处理
+- 为BIT类型字段添加行高亮显示
+
+feat(autopilot): 添加飞控算法编辑器及相关功能支持
+
+- 在配置管理器中新增 autopilot_json_dir 配置项
+- 添加 AutopilotEditorInterface 界面组件
+- 实现算法编辑器的核心功能模块 autopilot_document.py
+- 扩展主窗口功能区域布局以容纳新编辑器
+- 新增算法编辑页面切换逻辑和信号处理
+feat(editor): 添加C++代码生成功能并改进编辑器界面
+
+refactor(document): 优化控制器文档规范化逻辑
+
+style(home): 简化功能卡片标题显示
+
+fix(构建): 修复Windows 7下PyInstaller构建问题并改进文件保存处理
+
+添加pyimod04_pywin32.py以解决Windows 7下的PyInstaller加载问题
+重构run.bat构建脚本，使用统一参数变量
+改进协议编辑器的文件保存逻辑，添加错误处理和临时文件机制

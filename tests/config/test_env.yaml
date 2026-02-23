@@ -1,0 +1,44 @@
+# 测试环境配置文件
+# Ubuntu虚拟机配置 (已配置SSH免密登录)
+
+ubuntu_vm:
+  host: "192.168.56.132"
+  port: 22
+  username: "jiangkai"
+  # 使用SSH密钥认证（免密）
+  private_key: "~/.ssh/id_rsa"
+  # password 不再使用，保留作为备用
+  # password: "edwardjk2003"
+
+# 真实设备配置
+real_device:
+  host: "192.168.1.29"
+  port: 22
+  username: "root"  # 请替换为实际用户名
+  password: "{{REAL_DEVICE_PASSWORD}}"  # 请通过环境变量或手动设置
+  # 或者使用密钥认证
+  # private_key: "~/.ssh/device_key"
+  # passphrase: "{{DEVICE_KEY_PASSPHRASE}}"
+
+# 测试数据目录配置
+test_data:
+  base_dir: "tests/test_data"
+  upload_dir: "tests/test_data/uploads"  # 上传测试文件目录
+  download_dir: "tests/test_data/downloads"  # 下载文件保存目录
+  temp_dir: "tests/test_data/temp"  # 临时文件目录
+
+# SSH连接配置
+ssh:
+  timeout: 30  # 连接超时时间（秒）
+  retry_count: 3  # 重试次数
+  retry_delay: 2  # 重试间隔（秒）
+
+# SFTP配置
+sftp:
+  chunk_size: 8192  # 文件传输块大小（字节）
+  verify_checksum: true  # 是否验证文件校验和
+
+# 环境控制变量说明
+# UBUNTU_VM_AVAILABLE=1  - 启用Ubuntu虚拟机测试
+# REAL_DEVICE_TEST=1     - 启用真实设备测试
+# TEST_ENV_PASSWORD      - 默认测试密码（如未设置特定密码则使用）

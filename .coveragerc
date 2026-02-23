@@ -1,0 +1,126 @@
+[run]
+# 覆盖率运行配置
+
+# 要测量覆盖率的源代码目录
+source =
+    src
+
+# 要省略的文件或目录（支持通配符）
+omit =
+    # 省略测试文件本身
+    tests/*
+    # 省略虚拟环境
+    */venv/*
+    */.venv/*
+    */env/*
+    # 省略构建输出
+    build/*
+    dist/*
+    *.egg-info/*
+    # 省略IDE配置
+    .vscode/*
+    .idea/*
+    # 省略PyQt生成的UI文件
+    */ui_*.py
+    # 省略自动生成的资源文件
+    */rc_*.py
+    */*_rc.py
+
+# 分支覆盖率（测量条件分支的真假两种情况）
+branch = True
+
+# 并行模式（用于多进程测试）
+parallel = False
+
+# 是否测量动态执行的代码（如exec/eval）
+dynamic_context = test_function
+
+# 数据文件位置
+data_file = .coverage
+
+# 是否在测量时显示已收集的覆盖率信息
+# debug = trace
+
+[report]
+# 覆盖率报告配置
+
+# 显示缺少覆盖率的行号
+show_missing = True
+
+# 显示分支覆盖率信息
+skip_covered = False
+
+# 排序方式
+sort = Cover
+
+# 精度
+precision = 2
+
+# 排除不需要统计覆盖率的行（正则表达式）
+exclude_lines =
+    # 省略pragma注释标记的行
+    pragma: no cover
+    # 省略defensive代码
+    def __repr__
+    def __str__
+    # 省略抽象方法
+    @(abc\.)?abstractmethod
+    # 省略未实现的方法
+    raise NotImplementedError
+    raise AssertionError
+    # 省略导入语句
+    ^import
+    ^from.*import
+    # 省略类型检查相关的代码
+    if TYPE_CHECKING:
+    if typing.TYPE_CHECKING:
+    # 省略主程序入口
+    if __name__ == .__main__.:
+    # 省略pass语句
+    ^\s*pass\s*$
+    # 省略省略号
+    ^\s*\.\.\.\s*$
+    # 省略日志记录行
+    ^\s*logger\.
+    ^\s*logging\.
+    # 省略Qt信号定义
+    .*pyqtSignal.*
+    .*Signal.*
+    # 省略装饰器
+    ^\s*@
+
+# 忽略的文件
+ignore_errors = True
+
+# 失败阈值（覆盖率低于此值时报告失败）
+# fail_under = 80
+
+[html]
+# HTML报告配置
+
+# 输出目录
+directory = tests/reports/coverage_html
+
+# 报告标题
+title = openEuler Environment Configurer - Coverage Report
+
+# 是否显示上下文信息
+show_contexts = False
+
+[xml]
+# XML报告配置
+
+# 输出文件
+output = tests/reports/coverage.xml
+
+# 是否包含包名
+include_package_name = True
+
+[paths]
+# 路径映射配置（用于合并不同机器上的覆盖率数据）
+
+# 源代码路径映射
+source =
+    src/
+    */src/
+    H:\WorkSpace\PythonWorkspace\openEulerEnvironment\src\

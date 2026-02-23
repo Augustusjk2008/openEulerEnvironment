@@ -56,6 +56,8 @@ TYPE_SPECS: Dict[str, Dict[str, Optional[str]]] = {
     "BIT": {"bytes": None, "cpp_type": None, "log_type": None},
 }
 
+MAX_BIT_FIELD_BITS = 32
+
 
 @dataclass
 class FieldSpec:
@@ -230,6 +232,10 @@ def validate_fields(fields: List[FieldSpec]) -> List[str]:
         if field.field_type == "BIT":
             if field.length <= 0:
                 warnings.append(f"BIT 长度必须大于0 (序号 {field.index})")
+            elif field.length > MAX_BIT_FIELD_BITS:
+                warnings.append(
+                    f"BIT 长度不能超过 {MAX_BIT_FIELD_BITS} 位 (序号 {field.index})，超出部分将按 {MAX_BIT_FIELD_BITS} 位处理"
+                )
             continue
         expected = TYPE_SPECS[field.field_type]["bytes"]
         if expected is not None and field.length not in (0, expected):
@@ -303,55 +309,182 @@ def _infer_default_numeric(field: FieldSpec) -> Optional[str]:
     return _format_int_literal(value)
 
 
+def _effective_bit_length(length: int) -> int:
+    return max(0, min(int(length), MAX_BIT_FIELD_BITS))
+
+
+def _bit_container_bits(total_bits: int) -> int:
+    if total_bits <= 8:
+        return 8
+    if total_bits <= 16:
+        return 16
+    return 32
+
+
+def _split_bit_fields(bit_fields: List[FieldMeta]) -> List[Tuple[int, int, int]]:
+    """Split a contiguous BIT run into group ranges: (start, end, container_bits)."""
+    if not bit_fields:
+        return []
+
+    lengths = [_effective_bit_length(meta.spec.length) for meta in bit_fields]
+    prefix = [0]
+    for length in lengths:
+        prefix.append(prefix[-1] + length)
+
+    def bits_between(start: int, end: int) -> int:
+        return prefix[end] - prefix[start]
+
+    total = len(bit_fields)
+    start = 0
+    groups: List[Tuple[int, int, int]] = []
+
+    def append_small_group(begin: int, end: int) -> None:
+        """Append a <=32-bit group and apply 17~24 bit 2+1 split rule when possible."""
+        small_bits = bits_between(begin, end)
+        if small_bits <= 0:
+            return
+        if 16 < small_bits <= 24:
+            split_end = None
+            split_first_bits = -1
+            for mid in range(begin + 1, end):
+                first_bits = bits_between(begin, mid)
+                second_bits = bits_between(mid, end)
+                if first_bits <= 16 and first_bits > 0 and second_bits <= 8 and second_bits > 0:
+                    if first_bits > split_first_bits:
+                        split_end = mid
+                        split_first_bits = first_bits
+            if split_end is not None:
+                groups.append((begin, split_end, 16))
+                groups.append((split_end, end, 8))
+                return
+        groups.append((begin, end, _bit_container_bits(small_bits)))
+
+    def pick_largest_prefix(
+        begin: int,
+        require_byte_aligned: bool = False,
+        min_bits: Optional[int] = None,
+        max_bits: int = 32,
+    ) -> Tuple[Optional[int], int]:
+        best_end: Optional[int] = None
+        best_bits = -1
+        for end in range(begin + 1, total + 1):
+            bits = bits_between(begin, end)
+            if bits > max_bits:
+                break
+            if bits <= 0:
+                continue
+            if min_bits is not None and bits < min_bits:
+                continue
+            if require_byte_aligned and bits % 8 != 0:
+                continue
+            if bits > best_bits:
+                best_end = end
+                best_bits = bits
+        return best_end, best_bits
+
+    while start < total:
+        remaining_bits = bits_between(start, total)
+
+        if remaining_bits <= 0:
+            end = start + 1
+            groups.append((start, end, 8))
+            start = end
+            continue
+
+        if remaining_bits <= 32:
+            append_small_group(start, total)
+            break
+
+        end, bits = pick_largest_prefix(start, require_byte_aligned=True)
+        if end is not None:
+            append_small_group(start, end)
+            start = end
+            continue
+
+        end, bits = pick_largest_prefix(start, min_bits=24)
+        if end is not None:
+            groups.append((start, end, 32))
+            start = end
+            continue
+
+        end, bits = pick_largest_prefix(start)
+        if end is None:
+            end = min(start + 1, total)
+            bits = bits_between(start, end)
+        groups.append((start, end, _bit_container_bits(bits)))
+        start = end
+
+    return groups
+
+
 def _build_layout(fields: List[FieldSpec]) -> Tuple[List[FieldMeta], List[BitGroup], int]:
-    metas: List[FieldMeta] = []
+    metas: List[FieldMeta] = [
+        FieldMeta(spec=spec, array_ref=parse_array_ref(spec.name_en))
+        for spec in fields
+    ]
     bit_groups: List[BitGroup] = []
     offset = 0
-    current_group: Optional[BitGroup] = None
     group_index = 1
+    used_member_names = set()
+    cursor = 0
 
-    for spec in fields:
-        meta = FieldMeta(spec=spec, array_ref=parse_array_ref(spec.name_en))
-        if spec.field_type == "BIT":
-            if current_group is None:
-                group_name, _ = split_group_name(spec.name_en)
-                if not group_name:
-                    group_name = f"bitGroup{group_index}"
-                    group_index += 1
-                current_group = BitGroup(
-                    name=group_name,
-                    struct_name=to_struct_name(group_name),
-                    member_name=normalize_identifier(group_name),
-                    start_offset=offset,
-                    total_bits=0,
-                    container_bits=0,
-                    fields=[],
-                )
-                bit_groups.append(current_group)
-            meta.byte_offset = current_group.start_offset
-            meta.bit_offset = current_group.total_bits
-            current_group.fields.append(meta)
-            current_group.total_bits += max(spec.length, 0)
-        else:
-            if current_group is not None:
-                offset = current_group.start_offset + ((current_group.total_bits + 7) // 8)
-                current_group = None
+    while cursor < len(metas):
+        meta = metas[cursor]
+        spec = meta.spec
+        if spec.field_type != "BIT":
             meta.byte_offset = offset
-            offset += max(spec.length, 0)
-        metas.append(meta)
+            offset += _field_byte_length(spec)
+            cursor += 1
+            continue
 
-    if current_group is not None:
-        offset = current_group.start_offset + ((current_group.total_bits + 7) // 8)
+        run_start = cursor
+        while cursor < len(metas) and metas[cursor].spec.field_type == "BIT":
+            cursor += 1
+        run_fields = metas[run_start:cursor]
 
-    for group in bit_groups:
-        if group.total_bits <= 8:
-            group.container_bits = 8
-        elif group.total_bits <= 16:
-            group.container_bits = 16
-        elif group.total_bits <= 32:
-            group.container_bits = 32
-        else:
-            group.container_bits = 32
+        group_name, _ = split_group_name(run_fields[0].spec.name_en)
+        if not group_name:
+            group_name = f"bitGroup{group_index}"
+            group_index += 1
+
+        ranges = _split_bit_fields(run_fields)
+        has_split = len(ranges) > 1
+
+        for part, (start_idx, end_idx, container_bits) in enumerate(ranges, start=1):
+            fields_in_group = run_fields[start_idx:end_idx]
+            if not fields_in_group:
+                continue
+
+            raw_name = f"{group_name}_{part}" if has_split else group_name
+            member_name = normalize_identifier(raw_name)
+            suffix = 2
+            while member_name in used_member_names:
+                member_name = normalize_identifier(f"{raw_name}_{suffix}")
+                suffix += 1
+            used_member_names.add(member_name)
+
+            group = BitGroup(
+                name=member_name,
+                struct_name=to_struct_name(member_name),
+                member_name=member_name,
+                start_offset=offset,
+                total_bits=0,
+                container_bits=container_bits,
+                fields=[],
+            )
+
+            bit_offset = 0
+            for bit_meta in fields_in_group:
+                bit_meta.byte_offset = offset
+                bit_meta.bit_offset = bit_offset
+                bit_meta.bit_group = group
+                group.fields.append(bit_meta)
+                bit_offset += _effective_bit_length(bit_meta.spec.length)
+            group.total_bits = bit_offset
+
+            bit_groups.append(group)
+            offset += container_bits // 8
+
     return metas, bit_groups, offset
 
 
@@ -365,48 +498,30 @@ def _field_byte_length(spec: FieldSpec) -> int:
 
 
 def _bit_group_container_bytes(total_bits: int) -> int:
-    if total_bits <= 8:
-        return 1
-    if total_bits <= 16:
-        return 2
-    return 4
+    return _bit_container_bits(total_bits) // 8
 
 
 def compute_byte_positions(fields: List[FieldSpec]) -> List[str]:
-    positions = [""] * len(fields)
-    offset = 0
-    group_indices: List[int] = []
-    group_bits = 0
-
-    def flush_group():
-        nonlocal offset, group_indices, group_bits
-        if not group_indices:
-            return
-        bytes_len = _bit_group_container_bytes(group_bits)
-        start = offset + 1
-        end = offset + bytes_len
-        label = f"B{start}" if bytes_len == 1 else f"B{start}-{end}"
-        for idx in group_indices:
-            positions[idx] = label
-        offset += bytes_len
-        group_indices = []
-        group_bits = 0
-
-    for idx, spec in enumerate(fields):
+    metas, _, _ = _build_layout(fields)
+    positions = [""] * len(metas)
+    for idx, meta in enumerate(metas):
+        spec = meta.spec
         if spec.field_type == "BIT":
-            group_indices.append(idx)
-            group_bits += max(spec.length, 0)
+            group = meta.bit_group
+            if group is None:
+                continue
+            bytes_len = group.container_bits // 8
+            start = group.start_offset + 1
+            end = group.start_offset + bytes_len
+            positions[idx] = f"B{start}" if bytes_len == 1 else f"B{start}-{end}"
             continue
-        flush_group()
+
         bytes_len = _field_byte_length(spec)
         if bytes_len <= 0:
-            positions[idx] = ""
             continue
-        start = offset + 1
-        end = offset + bytes_len
+        start = meta.byte_offset + 1
+        end = meta.byte_offset + bytes_len
         positions[idx] = f"B{start}" if bytes_len == 1 else f"B{start}-{end}"
-        offset += bytes_len
-    flush_group()
     return positions
 
 
@@ -416,7 +531,7 @@ def compute_bit_positions(fields: List[FieldSpec]) -> List[str]:
     for idx, meta in enumerate(metas):
         if meta.spec.field_type != "BIT":
             continue
-        bit_len = max(meta.spec.length, 0)
+        bit_len = _effective_bit_length(meta.spec.length)
         if bit_len <= 0:
             continue
         start = meta.bit_offset + 1
@@ -453,7 +568,7 @@ def _compute_frame_offsets(metas: List[FieldMeta], bit_groups: List[BitGroup]) -
     for meta in metas:
         spec = meta.spec
         if spec.field_type == "BIT":
-            group = next((g for g in bit_groups if meta in g.fields), None)
+            group = meta.bit_group or next((g for g in bit_groups if meta in g.fields), None)
             if group is None or group.member_name in processed_groups:
                 continue
             processed_groups.add(group.member_name)
@@ -591,7 +706,7 @@ def generate_cpp_code(frame_name: str, fields: List[FieldSpec]) -> str:
     def build_target(meta: FieldMeta) -> Optional[str]:
         spec = meta.spec
         if spec.field_type == "BIT":
-            group = next((g for g in bit_groups if meta in g.fields), None)
+            group = meta.bit_group or next((g for g in bit_groups if meta in g.fields), None)
             if group is None:
                 return None
             _, field_name = split_group_name(spec.name_en)
@@ -616,7 +731,7 @@ def generate_cpp_code(frame_name: str, fields: List[FieldSpec]) -> str:
     def build_target_expr(meta: FieldMeta, index_expr: Optional[str] = None) -> str:
         spec = meta.spec
         if spec.field_type == "BIT":
-            group = next((g for g in bit_groups if meta in g.fields), None)
+            group = meta.bit_group or next((g for g in bit_groups if meta in g.fields), None)
             if group is None:
                 return ""
             _, field_name = split_group_name(spec.name_en)
@@ -823,7 +938,8 @@ def generate_cpp_code(frame_name: str, fields: List[FieldSpec]) -> str:
             _, field_name = split_group_name(meta.spec.name_en)
             field_name = normalize_identifier(field_name)
             comment = build_comment(meta.spec, field_name)
-            lines.append(f"        {base_type} {field_name} : {meta.spec.length};{comment}")
+            bit_len = _effective_bit_length(meta.spec.length)
+            lines.append(f"        {base_type} {field_name} : {bit_len};{comment}")
         lines.append("    };")
 
     declared = set()
@@ -952,7 +1068,7 @@ def generate_cpp_code(frame_name: str, fields: List[FieldSpec]) -> str:
     for meta in metas:
         spec = meta.spec
         if spec.field_type == "BIT":
-            group = next((g for g in bit_groups if meta in g.fields), None)
+            group = meta.bit_group or next((g for g in bit_groups if meta in g.fields), None)
             if group is None or group.member_name in processed_groups:
                 continue
             processed_groups.add(group.member_name)
@@ -964,7 +1080,7 @@ def generate_cpp_code(frame_name: str, fields: List[FieldSpec]) -> str:
                 bit_spec = bit_meta.spec
                 if not bit_spec.is_valid:
                     continue
-                bit_len = max(bit_spec.length, 0)
+                bit_len = _effective_bit_length(bit_spec.length)
                 mask = "0xFFFFFFFFu" if bit_len == 32 else f"((1u << {bit_len}) - 1u)"
                 _, field_name = split_group_name(bit_spec.name_en)
                 field_name = normalize_identifier(field_name)
@@ -1054,7 +1170,7 @@ def generate_cpp_code(frame_name: str, fields: List[FieldSpec]) -> str:
     for meta in metas:
         spec = meta.spec
         if spec.field_type == "BIT":
-            group = next((g for g in bit_groups if meta in g.fields), None)
+            group = meta.bit_group or next((g for g in bit_groups if meta in g.fields), None)
             if group is None or group.member_name in processed_groups:
                 continue
             processed_groups.add(group.member_name)
@@ -1071,7 +1187,7 @@ def generate_cpp_code(frame_name: str, fields: List[FieldSpec]) -> str:
                 bit_spec = bit_meta.spec
                 if not bit_spec.is_valid:
                     continue
-                bit_len = max(bit_spec.length, 0)
+                bit_len = _effective_bit_length(bit_spec.length)
                 mask = "0xFFFFFFFFu" if bit_len == 32 else f"((1u << {bit_len}) - 1u)"
                 _, field_name = split_group_name(bit_spec.name_en)
                 field_name = normalize_identifier(field_name)
@@ -1194,7 +1310,7 @@ def generate_cpp_code(frame_name: str, fields: List[FieldSpec]) -> str:
         if not spec.is_valid:
             continue
         if spec.field_type == "BIT":
-            group = next((g for g in bit_groups if meta in g.fields), None)
+            group = meta.bit_group or next((g for g in bit_groups if meta in g.fields), None)
             if group is None:
                 continue
             key = f"{group.member_name}:{spec.name_en}"
@@ -1202,7 +1318,7 @@ def generate_cpp_code(frame_name: str, fields: List[FieldSpec]) -> str:
                 continue
             emitted_bit_fields.add(key)
             storage_type = "UInt8" if group.container_bits == 8 else "UInt16" if group.container_bits == 16 else "UInt32"
-            bit_len = max(spec.length, 0)
+            bit_len = _effective_bit_length(spec.length)
             output_type = "UInt8" if bit_len <= 8 else "UInt16" if bit_len <= 16 else "UInt32"
             name_cn = spec.name_cn or spec.name_en
             lines.append(

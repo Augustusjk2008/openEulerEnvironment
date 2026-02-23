@@ -30,7 +30,6 @@ Thumbs.db
 
 # Project specific
 references/
-tests/
 
 # PyInstaller
 *.spec

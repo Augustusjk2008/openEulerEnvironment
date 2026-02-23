@@ -84,10 +84,8 @@ class MainWindow(FluentWindow):
         self.setWindowTitle('RTopenEuler 系统管理工具')
         self.setWindowIcon(QIcon(os.path.join(get_program_dir(), "assets", "logo.png")))
 
-        # 居中显示
-        desktop = QApplication.desktop().availableGeometry()
-        w, h = desktop.width(), desktop.height()
-        self.move(w//2 - self.width()//2, h//2 - self.height()//2)
+        # 窗口最大化显示
+        self.showMaximized()
 
     def _on_config_changed(self):
         """配置更改处理"""
