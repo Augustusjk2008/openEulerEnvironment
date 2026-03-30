@@ -979,6 +979,16 @@ class TestValidateFieldsExtended:
         warnings = validate_fields(fields)
         assert len(warnings) == 2
 
+    def test_validate_reserved_requires_positive_length(self):
+        """Test RESERVED fields require a positive byte length."""
+        fields = [
+            FieldSpec(1, 0, "RESERVED", "预留", "reserved_block", None, None, True),
+        ]
+        warnings = validate_fields(fields)
+        assert len(warnings) == 1
+        assert "RESERVED" in warnings[0]
+        assert "大于0" in warnings[0]
+
 
 class TestLoadCSVExtended:
     """Extended tests for load_csv function."""
@@ -1005,6 +1015,19 @@ class TestLoadCSVExtended:
         result = load_csv(str(csv_file))
         assert result[0].field_type == "BIT"
         assert result[0].is_valid is True
+
+    def test_load_csv_reserved_keeps_valid_flag(self, tmp_path):
+        """Test RESERVED fields preserve the valid flag from CSV."""
+        csv_content = """index,length,type,name_cn,name_en,lsb,default,is_valid
+1,6,RESERVED,预留,reserved_block,,,0
+2,2,U16,尾字段,tail,,,1
+"""
+        csv_file = tmp_path / "test.csv"
+        csv_file.write_text(csv_content, encoding="utf-8-sig")
+        result = load_csv(str(csv_file))
+        assert result[0].field_type == "RESERVED"
+        assert result[0].is_valid is False
+        assert result[0].length == 6
 
 
 class TestSaveCSVExtended:
@@ -1318,3 +1341,60 @@ class TestSaveCSVFormatting:
         content = csv_file.read_text(encoding="utf-8-sig")
         assert "1" in content  # True
         assert "0" in content  # False
+
+
+class TestReservedFieldBehavior:
+    """Tests for RESERVED field behavior."""
+
+    def test_reserved_affects_raw_byte_positions(self):
+        """Test RESERVED fields occupy bytes in the raw frame layout."""
+        fields = [
+            FieldSpec(1, 4, "U32", "头部", "header", None, None, True),
+            FieldSpec(2, 3, "RESERVED", "预留", "reserved_block", None, None, True),
+            FieldSpec(3, 2, "U16", "尾部", "tail", None, None, True),
+        ]
+        positions = compute_byte_positions(fields)
+        assert positions == ["B1-4", "B5-7", "B8-9"]
+
+    def test_reserved_validity_changes_parsed_frame_size(self):
+        """Test only valid RESERVED fields occupy parsed frame offsets."""
+        fields = [
+            FieldSpec(1, 4, "U32", "头部", "header", None, None, True),
+            FieldSpec(2, 3, "RESERVED", "预留A", "reserved_valid", None, None, True),
+            FieldSpec(3, 2, "U16", "中间", "middle", None, None, True),
+            FieldSpec(4, 5, "RESERVED", "预留B", "reserved_invalid", None, None, False),
+            FieldSpec(5, 1, "U8", "尾部", "tail", None, None, True),
+        ]
+        metas, bit_groups, _ = _build_layout(fields)
+        parsed_size = _compute_frame_offsets(metas, bit_groups)
+        assert parsed_size == 10
+        assert metas[1].frame_offset == 4
+        assert metas[2].frame_offset == 7
+        assert metas[3].frame_offset is None
+        assert metas[4].frame_offset == 9
+
+    def test_generate_cpp_reserved_field_skips_pack_unpack_and_schema(self):
+        """Test RESERVED fields are stored in frame but skipped by pack/unpack/schema."""
+        fields = [
+            FieldSpec(1, 4, "U32", "头部", "header", None, None, True),
+            FieldSpec(2, 3, "RESERVED", "预留", "reserved_block", None, None, True),
+            FieldSpec(3, 2, "U16", "尾部", "tail", None, None, True),
+        ]
+        code = generate_cpp_code("ReservedFrame", fields)
+        assert "std::array<uint8_t, 3> reserved_block{};" in code
+        assert "FRAME_SIZE = 9" in code
+        assert 'schema.addFieldAt("预留"' not in code
+        assert 'schema.addFieldAt("头部"' in code
+        assert 'schema.addFieldAt("尾部"' in code
+        assert "reserved_block = " not in code
+
+    def test_generate_cpp_invalid_reserved_field_not_in_frame(self):
+        """Test invalid RESERVED fields do not occupy parsed frame layout."""
+        fields = [
+            FieldSpec(1, 4, "U32", "头部", "header", None, None, True),
+            FieldSpec(2, 6, "RESERVED", "预留", "reserved_block", None, None, False),
+            FieldSpec(3, 2, "U16", "尾部", "tail", None, None, True),
+        ]
+        code = generate_cpp_code("ReservedFrameInvalid", fields)
+        assert "reserved_block" not in code
+        assert "FRAME_SIZE = 6" in code

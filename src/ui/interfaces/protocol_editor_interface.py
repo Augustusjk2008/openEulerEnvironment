@@ -66,6 +66,7 @@ TYPE_DISPLAY = [
     ("单精度浮点", "F32"),
     ("双精度浮点", "F64"),
     ("位字段", "BIT"),
+    ("预留字节", "RESERVED"),
 ]
 
 class ProtocolEditorInterface(QWidget):
@@ -400,6 +401,7 @@ class ProtocolEditorInterface(QWidget):
         valid_item.setCheckState(Qt.Checked if field is None or field.is_valid else Qt.Unchecked)
         self.table.setItem(row, 7, valid_item)
         field_type = type_combo.currentData() if type_combo else "U8"
+        self._update_auxiliary_fields_for_type(row, field_type)
         self._set_valid_state_for_type(row, field_type)
         self._apply_row_style(row, field_type)
         if field is None:
@@ -449,18 +451,40 @@ class ProtocolEditorInterface(QWidget):
             return
         valid_item.setFlags(Qt.ItemIsEnabled | Qt.ItemIsUserCheckable | Qt.ItemIsSelectable)
 
+    def _set_text_cell_editable(self, row, column, editable, clear=False):
+        item = self.table.item(row, column)
+        if item is None:
+            item = QTableWidgetItem("")
+            self.table.setItem(row, column, item)
+        flags = Qt.ItemIsEnabled | Qt.ItemIsSelectable
+        if editable:
+            flags |= Qt.ItemIsEditable
+        item.setFlags(flags)
+        if clear:
+            item.setText("")
+
+    def _update_auxiliary_fields_for_type(self, row, field_type):
+        is_reserved = field_type == "RESERVED"
+        self._set_text_cell_editable(row, 5, not is_reserved, clear=is_reserved)
+        self._set_text_cell_editable(row, 6, not is_reserved, clear=is_reserved)
+
     def _apply_row_style(self, row, field_type):
-        highlight = QBrush(QColor("#E6F7F7")) if field_type == "BIT" else QBrush()
+        if field_type == "BIT":
+            highlight = QBrush(QColor("#E6F7F7"))
+            combo_style = "QComboBox { background-color: #E6F7F7; }"
+        elif field_type == "RESERVED":
+            highlight = QBrush(QColor("#FFF4DB"))
+            combo_style = "QComboBox { background-color: #FFF4DB; }"
+        else:
+            highlight = QBrush()
+            combo_style = ""
         for col in range(self.table.columnCount()):
             item = self.table.item(row, col)
             if item:
                 item.setBackground(highlight)
         type_combo = self.table.cellWidget(row, 2)
         if type_combo:
-            if field_type == "BIT":
-                type_combo.setStyleSheet("QComboBox { background-color: #E6F7F7; }")
-            else:
-                type_combo.setStyleSheet("")
+            type_combo.setStyleSheet(combo_style)
 
     def _on_item_changed(self, item):
         if item.column() == 1:
@@ -472,6 +496,7 @@ class ProtocolEditorInterface(QWidget):
             return
         field_type = type_combo.currentData()
         if field_type == "BIT":
+            self._update_auxiliary_fields_for_type(row, field_type)
             self._set_valid_state_for_type(row, field_type)
             self._sync_index()
             return
@@ -480,11 +505,12 @@ class ProtocolEditorInterface(QWidget):
             length_item = QTableWidgetItem("")
             self.table.setItem(row, 1, length_item)
         length_item.setText(str(self._default_length_for_type(field_type)))
+        self._update_auxiliary_fields_for_type(row, field_type)
         self._set_valid_state_for_type(row, field_type)
         self._sync_index()
 
     def _default_length_for_type(self, field_type):
-        if field_type in ("CONST", "ANY", "U8", "S8", "U8F", "S8F"):
+        if field_type in ("CONST", "ANY", "U8", "S8", "U8F", "S8F", "RESERVED"):
             return 1
         if field_type in ("U16", "S16", "U16F", "S16F"):
             return 2
@@ -576,6 +602,9 @@ class ProtocolEditorInterface(QWidget):
                 lsb = None
             default_text = self.table.item(row, 6).text().strip() if self.table.item(row, 6) else ""
             default_val = default_text if default_text else None
+            if field_type == "RESERVED":
+                lsb = None
+                default_val = None
             valid_item = self.table.item(row, 7)
             is_valid = valid_item.checkState() == Qt.Checked if valid_item else False
             if field_type == "BIT":

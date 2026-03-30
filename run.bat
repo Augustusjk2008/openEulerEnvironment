@@ -1,7 +1,12 @@
 @echo off
 setlocal
 
-set PYI_ARGS=--noconsole --onefile --paths=src --paths=. --hidden-import pyimod04_pywin32 --name=openEulerManage.exe
+set PYI_ARGS=-y --noconsole --onedir --paths=src --paths=. --hidden-import pyimod04_pywin32 --name=openEulerManage
+set BUILD_DIR=dist\openEulerManage
+set BUILD_EXE=%BUILD_DIR%\openEulerManage.exe
+set INSTALL_DIR=H:\Resources\RTLinux\Environment
+set INSTALL_EXE=%INSTALL_DIR%\openEulerManage.exe
+set INSTALL_INTERNAL=%INSTALL_DIR%\_internal
 
 if "%~1"=="" goto help
 if "%~1"=="help" goto help
@@ -26,18 +31,18 @@ if "%~1"=="build" (
 )
 
 if "%~1"=="install" (
-    echo Installing executable to H:\Resources\RTLinux\Environment...
-    if not exist "dist\openEulerManage.exe" (
+    echo Installing application package to %INSTALL_DIR%...
+    if not exist "%BUILD_EXE%" (
         echo [ERROR] Build file not found. Please run 'run.bat build' first.
         exit /b 1
     )
-    copy /y "dist\openEulerManage.exe" "H:\Resources\RTLinux\Environment\"
+    powershell -ExecutionPolicy Bypass -Command "if (Test-Path '%INSTALL_INTERNAL%') { Remove-Item -LiteralPath '%INSTALL_INTERNAL%' -Recurse -Force }; if (Test-Path '%INSTALL_EXE%') { Remove-Item -LiteralPath '%INSTALL_EXE%' -Force }; Copy-Item -Path '%BUILD_DIR%\\*' -Destination '%INSTALL_DIR%' -Recurse -Force"
     goto :eof
 )
 
 if "%~1"=="pack" (
     echo Packaging...
-    powershell -ExecutionPolicy Bypass -File "H:\Resources\RTLinux\Environment\back_and_pack.ps1"
+    powershell -ExecutionPolicy Bypass -File "%INSTALL_DIR%\back_and_pack.ps1"
     goto :eof
 )
 
@@ -49,10 +54,10 @@ if "%~1"=="all" (
         echo [ERROR] Build failed.
         exit /b 1
     )
-    echo [2/3] Installing executable...
-    copy /y "dist\openEulerManage.exe" "H:\Resources\RTLinux\Environment\"
+    echo [2/3] Installing application package...
+    powershell -ExecutionPolicy Bypass -Command "if (Test-Path '%INSTALL_INTERNAL%') { Remove-Item -LiteralPath '%INSTALL_INTERNAL%' -Recurse -Force }; if (Test-Path '%INSTALL_EXE%') { Remove-Item -LiteralPath '%INSTALL_EXE%' -Force }; Copy-Item -Path '%BUILD_DIR%\\*' -Destination '%INSTALL_DIR%' -Recurse -Force"
     echo [3/3] Packaging...
-    powershell -ExecutionPolicy Bypass -File "H:\Resources\RTLinux\Environment\back_and_pack.ps1"
+    powershell -ExecutionPolicy Bypass -File "%INSTALL_DIR%\back_and_pack.ps1"
     echo Done.
     goto :eof
 )
@@ -63,8 +68,8 @@ echo.
 echo Commands:
 echo   dev     - Run the application in development mode
 echo   simple  - Run the application in simple mode
-echo   build   - Build the application into an executable
-echo   install - Copy the built executable to the resource directory
+echo   build   - Build the application into an onedir package
+echo   install - Copy the built package to the resource directory
 echo   pack    - Run the backup and packaging script
 echo   all     - Build and install and pack
 echo   help    - Show this help message

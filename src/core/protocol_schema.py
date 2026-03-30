@@ -34,6 +34,7 @@ TYPE_OPTIONS = [
     "F32",
     "F64",
     "BIT",
+    "RESERVED",
 ]
 
 TYPE_SPECS: Dict[str, Dict[str, Optional[str]]] = {
@@ -54,6 +55,7 @@ TYPE_SPECS: Dict[str, Dict[str, Optional[str]]] = {
     "F32": {"bytes": 4, "cpp_type": "float", "log_type": "Float32"},
     "F64": {"bytes": 8, "cpp_type": "double", "log_type": "Float64"},
     "BIT": {"bytes": None, "cpp_type": None, "log_type": None},
+    "RESERVED": {"bytes": None, "cpp_type": None, "log_type": None},
 }
 
 MAX_BIT_FIELD_BITS = 32
@@ -228,6 +230,10 @@ def validate_fields(fields: List[FieldSpec]) -> List[str]:
     for field in fields:
         if field.field_type not in TYPE_OPTIONS:
             warnings.append(f"未知类型: {field.field_type} (序号 {field.index})")
+            continue
+        if field.field_type == "RESERVED":
+            if field.length <= 0:
+                warnings.append(f"RESERVED 长度必须大于0 (序号 {field.index})")
             continue
         if field.field_type == "BIT":
             if field.length <= 0:
@@ -587,7 +593,7 @@ def _compute_frame_offsets(metas: List[FieldMeta], bit_groups: List[BitGroup]) -
 def _collect_arrays(metas: List[FieldMeta]) -> Dict[str, ArrayGroup]:
     arrays: Dict[str, ArrayGroup] = {}
     for meta in metas:
-        if meta.spec.field_type == "BIT":
+        if meta.spec.field_type in ("BIT", "RESERVED"):
             continue
         if meta.array_ref is None:
             continue
@@ -624,7 +630,7 @@ def _assign_implicit_arrays(metas: List[FieldMeta]) -> None:
     while index < total:
         meta = metas[index]
         spec = meta.spec
-        if spec.field_type == "BIT":
+        if spec.field_type in ("BIT", "RESERVED"):
             index += 1
             continue
         if meta.array_ref is not None:
@@ -898,6 +904,8 @@ def generate_cpp_code(frame_name: str, fields: List[FieldSpec]) -> str:
 
     for meta in metas:
         spec = meta.spec
+        if spec.field_type == "RESERVED":
+            continue
         literal = _infer_default_numeric(spec)
         if literal is None:
             continue
@@ -953,6 +961,16 @@ def generate_cpp_code(frame_name: str, fields: List[FieldSpec]) -> str:
                 continue
             lines.append(f"    {group.struct_name} {group.member_name};")
             declared.add(group.member_name)
+            continue
+        if spec.field_type == "RESERVED":
+            if not spec.is_valid:
+                continue
+            field_name = normalize_identifier(spec.name_en)
+            if field_name in declared:
+                continue
+            comment = build_comment(spec, field_name)
+            lines.append(f"    std::array<uint8_t, {spec.length}> {field_name}{{}};{comment}")
+            declared.add(field_name)
             continue
         if meta.array_ref is not None:
             base = meta.array_ref.base
@@ -1100,6 +1118,8 @@ def generate_cpp_code(frame_name: str, fields: List[FieldSpec]) -> str:
             continue
         if meta.frame_offset is None:
             continue
+        if spec.field_type == "RESERVED":
+            continue
 
         if meta.array_ref is not None:
             ref = meta.array_ref
@@ -1200,6 +1220,8 @@ def generate_cpp_code(frame_name: str, fields: List[FieldSpec]) -> str:
         if not spec.is_valid:
             continue
         if meta.frame_offset is None:
+            continue
+        if spec.field_type == "RESERVED":
             continue
         if spec.field_type in ("CONST", "ANY", "U8"):
             value_expr = f"static_cast<uint8_t>(rawData[{meta.frame_offset}])"
@@ -1308,6 +1330,8 @@ def generate_cpp_code(frame_name: str, fields: List[FieldSpec]) -> str:
     for meta in metas:
         spec = meta.spec
         if not spec.is_valid:
+            continue
+        if spec.field_type == "RESERVED":
             continue
         if spec.field_type == "BIT":
             group = meta.bit_group or next((g for g in bit_groups if meta in g.fields), None)

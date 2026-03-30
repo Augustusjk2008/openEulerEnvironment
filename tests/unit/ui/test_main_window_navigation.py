@@ -16,7 +16,7 @@ from unittest.mock import patch, MagicMock, Mock
 
 # 尝试导入 PyQt5 相关模块
 try:
-    from PyQt5.QtWidgets import QApplication
+    from PyQt5.QtWidgets import QApplication, QWidget
     from PyQt5.QtCore import Qt
     from PyQt5.QtTest import QTest
     PYQT5_AVAILABLE = True
@@ -35,6 +35,29 @@ except ImportError as e:
 
 # 全局标记，用于控制是否运行 GUI 测试
 RUN_GUI_TESTS = False
+
+
+if PYQT5_AVAILABLE:
+    class MockInterfaceWidget(QWidget):
+        """轻量 QWidget 测试替身，用于主窗口依赖注入。"""
+
+        def __init__(self):
+            super().__init__()
+            self.setObjectName(f"mock_{id(self)}")
+            self.switch_to_initializer = MagicMock()
+            self.switch_to_environment = MagicMock()
+            self.switch_to_codegen = MagicMock()
+            self.switch_to_tutorial = MagicMock()
+            self.switch_to_terminal = MagicMock()
+            self.switch_to_ftp = MagicMock()
+            self.switch_to_data_visualization = MagicMock()
+            self.switch_to_protocol_editor = MagicMock()
+            self.switch_to_autopilot_editor = MagicMock()
+            self.switch_to_settings = MagicMock()
+            self.config_changed = MagicMock()
+            self.connection_changed = MagicMock()
+            self.set_ftp_connected = MagicMock()
+            self.sftp = None
 
 
 # =============================================================================
@@ -297,7 +320,7 @@ class TestMainWindowWithGUI:
 class TestMainWindowMocked:
     """使用 Mock 的主窗口测试（无需真实 GUI）"""
 
-    def test_progress_callback_called(self):
+    def test_progress_callback_called(self, qapp, qtbot):
         """测试进度回调被正确调用"""
         if main_window_module is None:
             pytest.skip("主窗口模块不可用")
@@ -306,17 +329,17 @@ class TestMainWindowMocked:
             get_config_manager=MagicMock(),
             get_program_dir=MagicMock(return_value="/tmp"),
             FontManager=MagicMock(),
-            HomeInterface=MagicMock(),
-            SettingsInterface=MagicMock(),
-            InitializerInterface=MagicMock(),
-            EnvironmentInstallInterface=MagicMock(),
-            CodeGenerationInterface=MagicMock(),
-            TutorialInterface=MagicMock(),
-            TerminalInterface=MagicMock(),
-            FtpInterface=MagicMock(),
-            DataVisualizationInterface=MagicMock(),
-            ProtocolEditorInterface=MagicMock(),
-            AutopilotEditorInterface=MagicMock(),
+            HomeInterface=MagicMock(return_value=MockInterfaceWidget()),
+            SettingsInterface=MagicMock(return_value=MockInterfaceWidget()),
+            InitializerInterface=MagicMock(return_value=MockInterfaceWidget()),
+            EnvironmentInstallInterface=MagicMock(return_value=MockInterfaceWidget()),
+            CodeGenerationInterface=MagicMock(return_value=MockInterfaceWidget()),
+            TutorialInterface=MagicMock(return_value=MockInterfaceWidget()),
+            TerminalInterface=MagicMock(return_value=MockInterfaceWidget()),
+            FtpInterface=MagicMock(return_value=MockInterfaceWidget()),
+            DataVisualizationInterface=MagicMock(return_value=MockInterfaceWidget()),
+            ProtocolEditorInterface=MagicMock(return_value=MockInterfaceWidget()),
+            AutopilotEditorInterface=MagicMock(return_value=MockInterfaceWidget()),
             FluentWindow=MagicMock(),
         ):
             from ui.main_window import MainWindow
@@ -328,13 +351,14 @@ class TestMainWindowMocked:
 
             # 创建实例
             window = MainWindow(progress_callback=progress_callback)
+            qtbot.addWidget(window)
 
             # 验证进度回调被调用
             assert len(progress_calls) > 0
             assert progress_calls[0][0] == 5  # 第一个进度值
             assert progress_calls[-1][0] == 100  # 最后一个进度值
 
-    def test_config_manager_integration(self):
+    def test_config_manager_integration(self, qapp, qtbot):
         """测试配置管理器集成"""
         if main_window_module is None:
             pytest.skip("主窗口模块不可用")
@@ -346,34 +370,35 @@ class TestMainWindowMocked:
             get_config_manager=MagicMock(return_value=mock_config),
             get_program_dir=MagicMock(return_value="/tmp"),
             FontManager=MagicMock(),
-            HomeInterface=MagicMock(),
-            SettingsInterface=MagicMock(),
-            InitializerInterface=MagicMock(),
-            EnvironmentInstallInterface=MagicMock(),
-            CodeGenerationInterface=MagicMock(),
-            TutorialInterface=MagicMock(),
-            TerminalInterface=MagicMock(),
-            FtpInterface=MagicMock(),
-            DataVisualizationInterface=MagicMock(),
-            ProtocolEditorInterface=MagicMock(),
-            AutopilotEditorInterface=MagicMock(),
+            HomeInterface=MagicMock(return_value=MockInterfaceWidget()),
+            SettingsInterface=MagicMock(return_value=MockInterfaceWidget()),
+            InitializerInterface=MagicMock(return_value=MockInterfaceWidget()),
+            EnvironmentInstallInterface=MagicMock(return_value=MockInterfaceWidget()),
+            CodeGenerationInterface=MagicMock(return_value=MockInterfaceWidget()),
+            TutorialInterface=MagicMock(return_value=MockInterfaceWidget()),
+            TerminalInterface=MagicMock(return_value=MockInterfaceWidget()),
+            FtpInterface=MagicMock(return_value=MockInterfaceWidget()),
+            DataVisualizationInterface=MagicMock(return_value=MockInterfaceWidget()),
+            ProtocolEditorInterface=MagicMock(return_value=MockInterfaceWidget()),
+            AutopilotEditorInterface=MagicMock(return_value=MockInterfaceWidget()),
             FluentWindow=MagicMock(),
         ):
             from ui.main_window import MainWindow
 
             window = MainWindow(progress_callback=None)
+            qtbot.addWidget(window)
 
             # 验证配置管理器被保存
             assert window.config_manager == mock_config
 
-    def test_signal_connections(self):
+    def test_signal_connections(self, qapp, qtbot):
         """测试信号连接"""
         if main_window_module is None:
             pytest.skip("主窗口模块不可用")
-        mock_home = MagicMock()
-        mock_settings = MagicMock()
-        mock_ftp = MagicMock()
-        mock_data_viz = MagicMock()
+        mock_home = MockInterfaceWidget()
+        mock_settings = MockInterfaceWidget()
+        mock_ftp = MockInterfaceWidget()
+        mock_data_viz = MockInterfaceWidget()
 
         with patch.multiple(
             main_window_module,
@@ -382,24 +407,176 @@ class TestMainWindowMocked:
             FontManager=MagicMock(),
             HomeInterface=MagicMock(return_value=mock_home),
             SettingsInterface=MagicMock(return_value=mock_settings),
-            InitializerInterface=MagicMock(),
-            EnvironmentInstallInterface=MagicMock(),
-            CodeGenerationInterface=MagicMock(),
-            TutorialInterface=MagicMock(),
-            TerminalInterface=MagicMock(),
+            InitializerInterface=MagicMock(return_value=MockInterfaceWidget()),
+            EnvironmentInstallInterface=MagicMock(return_value=MockInterfaceWidget()),
+            CodeGenerationInterface=MagicMock(return_value=MockInterfaceWidget()),
+            TutorialInterface=MagicMock(return_value=MockInterfaceWidget()),
+            TerminalInterface=MagicMock(return_value=MockInterfaceWidget()),
             FtpInterface=MagicMock(return_value=mock_ftp),
             DataVisualizationInterface=MagicMock(return_value=mock_data_viz),
-            ProtocolEditorInterface=MagicMock(),
-            AutopilotEditorInterface=MagicMock(),
+            ProtocolEditorInterface=MagicMock(return_value=MockInterfaceWidget()),
+            AutopilotEditorInterface=MagicMock(return_value=MockInterfaceWidget()),
             FluentWindow=MagicMock(),
         ):
             from ui.main_window import MainWindow
 
             window = MainWindow(progress_callback=None)
+            qtbot.addWidget(window)
 
             # 验证信号连接
             mock_settings.config_changed.connect.assert_called_once()
-            mock_ftp.connection_changed.connect.assert_called_once()
+            mock_ftp.connection_changed.connect.assert_not_called()
+
+            window._switch_to_ftp_page()
+            window._switch_to_data_visualization_page()
+
+            mock_ftp.connection_changed.connect.assert_called_once_with(
+                mock_data_viz.set_ftp_connected
+            )
+
+    def test_lazy_interfaces_defer_widget_creation(self, qapp, qtbot):
+        """测试非首页/设置页在启动时不会立即创建真实界面"""
+        if main_window_module is None:
+            pytest.skip("主窗口模块不可用")
+
+        mock_home = MockInterfaceWidget()
+        mock_settings = MockInterfaceWidget()
+        mock_environment = MockInterfaceWidget()
+        mock_initializer = MockInterfaceWidget()
+        mock_codegen = MockInterfaceWidget()
+        mock_tutorial = MockInterfaceWidget()
+        mock_terminal = MockInterfaceWidget()
+        mock_ftp = MockInterfaceWidget()
+        mock_data_viz = MockInterfaceWidget()
+        mock_protocol = MockInterfaceWidget()
+        mock_autopilot = MockInterfaceWidget()
+
+        environment_cls = MagicMock(return_value=mock_environment)
+        initializer_cls = MagicMock(return_value=mock_initializer)
+        codegen_cls = MagicMock(return_value=mock_codegen)
+        tutorial_cls = MagicMock(return_value=mock_tutorial)
+        terminal_cls = MagicMock(return_value=mock_terminal)
+        ftp_cls = MagicMock(return_value=mock_ftp)
+        data_viz_cls = MagicMock(return_value=mock_data_viz)
+        protocol_cls = MagicMock(return_value=mock_protocol)
+        autopilot_cls = MagicMock(return_value=mock_autopilot)
+
+        with patch.multiple(
+            main_window_module,
+            get_config_manager=MagicMock(),
+            get_program_dir=MagicMock(return_value="/tmp"),
+            FontManager=MagicMock(),
+            HomeInterface=MagicMock(return_value=mock_home),
+            SettingsInterface=MagicMock(return_value=mock_settings),
+            InitializerInterface=initializer_cls,
+            EnvironmentInstallInterface=environment_cls,
+            CodeGenerationInterface=codegen_cls,
+            TutorialInterface=tutorial_cls,
+            TerminalInterface=terminal_cls,
+            FtpInterface=ftp_cls,
+            DataVisualizationInterface=data_viz_cls,
+            ProtocolEditorInterface=protocol_cls,
+            AutopilotEditorInterface=autopilot_cls,
+            FluentWindow=MagicMock(),
+        ):
+            from ui.main_window import MainWindow
+
+            window = MainWindow(progress_callback=None)
+            qtbot.addWidget(window)
+
+            assert window.homeInterface is mock_home
+            assert window.settingsInterface is mock_settings
+            environment_cls.assert_not_called()
+            initializer_cls.assert_not_called()
+            codegen_cls.assert_not_called()
+            tutorial_cls.assert_not_called()
+            terminal_cls.assert_not_called()
+            ftp_cls.assert_not_called()
+            data_viz_cls.assert_not_called()
+            protocol_cls.assert_not_called()
+            autopilot_cls.assert_not_called()
+
+    def test_switch_to_environment_page_loads_interface_once(self, qapp, qtbot):
+        """测试首次切换时才创建环境配置页面，且只创建一次"""
+        if main_window_module is None:
+            pytest.skip("主窗口模块不可用")
+
+        mock_environment = MockInterfaceWidget()
+        environment_cls = MagicMock(return_value=mock_environment)
+
+        with patch.multiple(
+            main_window_module,
+            get_config_manager=MagicMock(),
+            get_program_dir=MagicMock(return_value="/tmp"),
+            FontManager=MagicMock(),
+            HomeInterface=MagicMock(return_value=MockInterfaceWidget()),
+            SettingsInterface=MagicMock(return_value=MockInterfaceWidget()),
+            InitializerInterface=MagicMock(return_value=MockInterfaceWidget()),
+            EnvironmentInstallInterface=environment_cls,
+            CodeGenerationInterface=MagicMock(return_value=MockInterfaceWidget()),
+            TutorialInterface=MagicMock(return_value=MockInterfaceWidget()),
+            TerminalInterface=MagicMock(return_value=MockInterfaceWidget()),
+            FtpInterface=MagicMock(return_value=MockInterfaceWidget()),
+            DataVisualizationInterface=MagicMock(return_value=MockInterfaceWidget()),
+            ProtocolEditorInterface=MagicMock(return_value=MockInterfaceWidget()),
+            AutopilotEditorInterface=MagicMock(return_value=MockInterfaceWidget()),
+            FluentWindow=MagicMock(),
+        ):
+            from ui.main_window import MainWindow
+
+            window = MainWindow(progress_callback=None)
+            qtbot.addWidget(window)
+            window.switchTo = MagicMock()
+
+            window._switch_to_environment_page()
+            window._switch_to_environment_page()
+
+            environment_cls.assert_called_once_with(window)
+            assert window.environmentInstallInterface.is_loaded() is True
+            assert window.environmentInstallInterface.widget() is mock_environment
+            assert window.switchTo.call_count == 2
+
+    def test_data_visualization_defaults_to_disconnected_until_ftp_loads(self, qapp, qtbot):
+        """测试数据可视化页面懒加载后先收到未连接状态，FTP加载后再同步真实状态"""
+        if main_window_module is None:
+            pytest.skip("主窗口模块不可用")
+
+        mock_ftp = MockInterfaceWidget()
+        mock_ftp.sftp = object()
+        mock_data_viz = MockInterfaceWidget()
+
+        with patch.multiple(
+            main_window_module,
+            get_config_manager=MagicMock(),
+            get_program_dir=MagicMock(return_value="/tmp"),
+            FontManager=MagicMock(),
+            HomeInterface=MagicMock(return_value=MockInterfaceWidget()),
+            SettingsInterface=MagicMock(return_value=MockInterfaceWidget()),
+            InitializerInterface=MagicMock(return_value=MockInterfaceWidget()),
+            EnvironmentInstallInterface=MagicMock(return_value=MockInterfaceWidget()),
+            CodeGenerationInterface=MagicMock(return_value=MockInterfaceWidget()),
+            TutorialInterface=MagicMock(return_value=MockInterfaceWidget()),
+            TerminalInterface=MagicMock(return_value=MockInterfaceWidget()),
+            FtpInterface=MagicMock(return_value=mock_ftp),
+            DataVisualizationInterface=MagicMock(return_value=mock_data_viz),
+            ProtocolEditorInterface=MagicMock(return_value=MockInterfaceWidget()),
+            AutopilotEditorInterface=MagicMock(return_value=MockInterfaceWidget()),
+            FluentWindow=MagicMock(),
+        ):
+            from ui.main_window import MainWindow
+
+            window = MainWindow(progress_callback=None)
+            qtbot.addWidget(window)
+            window.switchTo = MagicMock()
+
+            window._switch_to_data_visualization_page()
+            mock_data_viz.set_ftp_connected.assert_called_with(False)
+
+            window._switch_to_ftp_page()
+            mock_ftp.connection_changed.connect.assert_called_once_with(
+                mock_data_viz.set_ftp_connected
+            )
+            assert mock_data_viz.set_ftp_connected.call_args_list[-1].args == (True,)
 
 
 # =============================================================================
