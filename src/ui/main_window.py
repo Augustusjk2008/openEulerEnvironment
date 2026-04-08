@@ -153,6 +153,39 @@ class MainWindow(FluentWindow):
         FontManager.apply_font_to_widget(self)
         self._emit_progress(100, "初始化完成")
 
+    def _cleanup_navigation_state(self):
+        """关闭前清理导航动画，避免延迟回调访问已销毁的导航项。"""
+        navigation = getattr(self, "navigationInterface", None)
+        if navigation is None:
+            return
+
+        try:
+            navigation.setIndicatorAnimationEnabled(False)
+        except (AttributeError, RuntimeError):
+            pass
+
+        panel = getattr(navigation, "panel", None)
+        if panel is None:
+            return
+
+        panel._currentRouteKey = None
+
+        indicator = getattr(panel, "indicator", None)
+        if indicator is not None:
+            try:
+                indicator.aniFinished.disconnect(panel._onIndicatorAniFinished)
+            except (TypeError, RuntimeError):
+                pass
+
+            try:
+                indicator.stopAnimation()
+            except RuntimeError:
+                pass
+
+    def closeEvent(self, event):
+        self._cleanup_navigation_state()
+        super().closeEvent(event)
+
     def _emit_progress(self, value, text=None):
         if self._progress_callback:
             self._progress_callback(value, text)

@@ -54,7 +54,8 @@ class AuthManager:
         if not os.path.exists(self.user_file):
             return {"version": 1, "users": {}}
         try:
-            content = open(self.user_file, "r", encoding="utf-8").read().strip()
+            with open(self.user_file, "r", encoding="utf-8") as file_obj:
+                content = file_obj.read().strip()
             if not content:
                 return {"version": 1, "users": {}}
             decrypted = self._decrypt(content)

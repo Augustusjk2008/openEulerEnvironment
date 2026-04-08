@@ -15,6 +15,7 @@ venv/
 env/
 ENV/
 .venv
+.venvs/
 
 # IDE
 .claude/
@@ -39,3 +40,9 @@ references/
 
 # Todo List
 Todo.md
+
+# Local caches
+.cache/
+
+# Claude
+.claude/

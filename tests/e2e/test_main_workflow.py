@@ -16,7 +16,7 @@ from pathlib import Path
 
 # 尝试导入PyQt5相关模块
 try:
-    from PyQt5.QtWidgets import QApplication, QMainWindow, QStatusBar, QMenuBar, QAction
+    from PyQt5.QtWidgets import QApplication, QMainWindow, QStatusBar, QMenuBar, QAction, QWidget
     from PyQt5.QtCore import Qt, QTimer
     from PyQt5.QtTest import QTest
     from PyQt5.QtGui import QKeySequence
@@ -33,6 +33,57 @@ except ImportError as e:
     MAIN_WINDOW_AVAILABLE = False
     MAIN_WINDOW_IMPORT_ERROR = str(e)
     main_window_module = None
+
+
+if PYQT5_AVAILABLE:
+    class MockInterfaceWidget(QWidget):
+        """轻量 QWidget 测试替身，用于主窗口依赖注入。"""
+
+        def __init__(self):
+            super().__init__()
+            self.setObjectName(f"mock_{id(self)}")
+            self.switch_to_initializer = MagicMock()
+            self.switch_to_environment = MagicMock()
+            self.switch_to_codegen = MagicMock()
+            self.switch_to_tutorial = MagicMock()
+            self.switch_to_terminal = MagicMock()
+            self.switch_to_ftp = MagicMock()
+            self.switch_to_data_visualization = MagicMock()
+            self.switch_to_protocol_editor = MagicMock()
+            self.switch_to_autopilot_editor = MagicMock()
+            self.switch_to_settings = MagicMock()
+            self.config_changed = MagicMock()
+            self.connection_changed = MagicMock()
+            self.set_ftp_connected = MagicMock()
+            self.sftp = None
+
+
+def _close_window(window, qtbot=None):
+    """关闭窗口并清空 Qt 事件，避免动画回调污染后续用例。"""
+    navigation = getattr(window, "navigationInterface", None)
+    if navigation is not None:
+        try:
+            navigation.setIndicatorAnimationEnabled(False)
+        except Exception:
+            pass
+
+        panel = getattr(navigation, "panel", None)
+        indicator = getattr(panel, "indicator", None)
+        if indicator is not None:
+            try:
+                indicator.stopAnimation()
+            except Exception:
+                pass
+
+    window.close()
+    if PYQT5_AVAILABLE:
+        QApplication.processEvents()
+    if qtbot is not None:
+        qtbot.wait(10)
+        return
+    window.deleteLater()
+    if PYQT5_AVAILABLE:
+        QApplication.processEvents()
 
 
 # =============================================================================
@@ -79,22 +130,7 @@ def mock_main_window_deps(monkeypatch):
     ]
 
     for interface_name in interface_classes:
-        mock_class = MagicMock()
-        mock_instance = MagicMock()
-        mock_instance.switch_to_initializer = MagicMock()
-        mock_instance.switch_to_environment = MagicMock()
-        mock_instance.switch_to_codegen = MagicMock()
-        mock_instance.switch_to_tutorial = MagicMock()
-        mock_instance.switch_to_terminal = MagicMock()
-        mock_instance.switch_to_ftp = MagicMock()
-        mock_instance.switch_to_data_visualization = MagicMock()
-        mock_instance.switch_to_protocol_editor = MagicMock()
-        mock_instance.switch_to_autopilot_editor = MagicMock()
-        mock_instance.switch_to_settings = MagicMock()
-        mock_instance.connection_changed = MagicMock()
-        mock_instance.set_ftp_connected = MagicMock()
-        mock_instance.sftp = None
-        mock_class.return_value = mock_instance
+        mock_class = MagicMock(return_value=MockInterfaceWidget())
         monkeypatch.setattr(f"ui.main_window.{interface_name}", mock_class)
 
     return {
@@ -113,13 +149,16 @@ def main_window(qtbot, mock_main_window_deps):
 
     # 创建窗口，传入progress_callback避免None错误
     window = MainWindow(progress_callback=lambda v, t: None)
+    window.switchTo = MagicMock()
+    navigation = getattr(window, "navigationInterface", None)
+    if navigation is not None:
+        navigation.setIndicatorAnimationEnabled(False)
     qtbot.addWidget(window)
 
     yield window
 
     # 清理
-    window.close()
-    window.deleteLater()
+    _close_window(window, qtbot)
 
 
 # =============================================================================
@@ -137,9 +176,10 @@ class TestMainWindowBasic:
         assert main_window.windowTitle() == "RTopenEuler 系统管理工具"
 
     def test_window_initial_size(self, main_window):
-        """测试窗口初始大小"""
-        assert main_window.width() == 1700
-        assert main_window.height() == 1050
+        """测试窗口初始化后尺寸有效且已进入最大化状态"""
+        assert main_window.width() > 0
+        assert main_window.height() > 0
+        assert main_window.isMaximized()
 
     def test_all_interfaces_created(self, main_window):
         """测试所有子界面已创建"""
@@ -323,9 +363,13 @@ class TestFtpDataVisualizationIntegration:
         assert True
 
     def test_initial_ftp_connection_state(self, main_window):
-        """测试初始FTP连接状态"""
-        # 验证初始状态设置被调用
-        main_window.dataVisualizationInterface.set_ftp_connected.assert_called()
+        """测试数据可视化页面首次加载时默认是未连接状态"""
+        assert main_window.dataVisualizationInterface.is_loaded() is False
+
+        main_window._switch_to_data_visualization_page()
+
+        data_visualization = main_window.dataVisualizationInterface.widget()
+        data_visualization.set_ftp_connected.assert_called_with(False)
 
 
 # =============================================================================
@@ -336,7 +380,7 @@ class TestFtpDataVisualizationIntegration:
 class TestProgressCallback:
     """进度回调测试"""
 
-    def test_progress_callback_called(self, qt_bot, mock_main_window_deps):
+    def test_progress_callback_called(self, qtbot, mock_main_window_deps):
         """测试进度回调被调用"""
         progress_calls = []
 
@@ -344,6 +388,9 @@ class TestProgressCallback:
             progress_calls.append((value, text))
 
         window = MainWindow(progress_callback=progress_callback)
+        navigation = getattr(window, "navigationInterface", None)
+        if navigation is not None:
+            navigation.setIndicatorAnimationEnabled(False)
         qtbot.addWidget(window)
 
         # 验证进度回调被调用
@@ -351,10 +398,9 @@ class TestProgressCallback:
         assert progress_calls[0][0] == 5  # 第一个进度值
         assert progress_calls[-1][0] == 100  # 最后一个进度值
 
-        window.close()
-        window.deleteLater()
+        _close_window(window, qtbot)
 
-    def test_progress_callback_sequence(self, qt_bot, mock_main_window_deps):
+    def test_progress_callback_sequence(self, qtbot, mock_main_window_deps):
         """测试进度回调序列"""
         progress_calls = []
 
@@ -362,14 +408,16 @@ class TestProgressCallback:
             progress_calls.append((value, text))
 
         window = MainWindow(progress_callback=progress_callback)
+        navigation = getattr(window, "navigationInterface", None)
+        if navigation is not None:
+            navigation.setIndicatorAnimationEnabled(False)
         qtbot.addWidget(window)
 
         # 验证进度值递增
         values = [call[0] for call in progress_calls]
         assert values == sorted(values)
 
-        window.close()
-        window.deleteLater()
+        _close_window(window, qtbot)
 
 
 # =============================================================================
@@ -506,7 +554,7 @@ class TestMainWorkflowMocked:
             for method_name in switch_methods:
                 assert hasattr(MainWindow, method_name), f"Missing method: {method_name}"
 
-    def test_progress_callback_with_none(self):
+    def test_progress_callback_with_none(self, qapp):
         """测试进度回调为None时不抛出异常"""
         if main_window_module is None:
             pytest.skip("主窗口模块不可用")
@@ -515,24 +563,27 @@ class TestMainWorkflowMocked:
             get_config_manager=MagicMock(),
             get_program_dir=MagicMock(return_value="/tmp"),
             FontManager=MagicMock(),
-            HomeInterface=MagicMock(),
-            SettingsInterface=MagicMock(),
-            InitializerInterface=MagicMock(),
-            EnvironmentInstallInterface=MagicMock(),
-            CodeGenerationInterface=MagicMock(),
-            TutorialInterface=MagicMock(),
-            TerminalInterface=MagicMock(),
-            FtpInterface=MagicMock(),
-            DataVisualizationInterface=MagicMock(),
-            ProtocolEditorInterface=MagicMock(),
-            AutopilotEditorInterface=MagicMock(),
-            FluentWindow=MagicMock(),
+            HomeInterface=MagicMock(return_value=MockInterfaceWidget()),
+            SettingsInterface=MagicMock(return_value=MockInterfaceWidget()),
+            InitializerInterface=MagicMock(return_value=MockInterfaceWidget()),
+            EnvironmentInstallInterface=MagicMock(return_value=MockInterfaceWidget()),
+            CodeGenerationInterface=MagicMock(return_value=MockInterfaceWidget()),
+            TutorialInterface=MagicMock(return_value=MockInterfaceWidget()),
+            TerminalInterface=MagicMock(return_value=MockInterfaceWidget()),
+            FtpInterface=MagicMock(return_value=MockInterfaceWidget()),
+            DataVisualizationInterface=MagicMock(return_value=MockInterfaceWidget()),
+            ProtocolEditorInterface=MagicMock(return_value=MockInterfaceWidget()),
+            AutopilotEditorInterface=MagicMock(return_value=MockInterfaceWidget()),
         ):
             from ui.main_window import MainWindow
 
             # 使用None作为progress_callback不应抛出异常
             window = MainWindow(progress_callback=None)
+            navigation = getattr(window, "navigationInterface", None)
+            if navigation is not None:
+                navigation.setIndicatorAnimationEnabled(False)
             assert window is not None
+            _close_window(window)
 
 
 # =============================================================================
@@ -544,7 +595,7 @@ class TestMainWorkflowMocked:
 class TestAsyncOperations:
     """异步操作测试"""
 
-    def test_window_creation_async(self, qt_bot, mock_main_window_deps):
+    def test_window_creation_async(self, qtbot, mock_main_window_deps):
         """测试异步窗口创建"""
         def create_window():
             return MainWindow(progress_callback=lambda v, t: None)
@@ -561,12 +612,14 @@ class TestAsyncOperations:
 
         # 创建窗口
         window = MainWindow(progress_callback=lambda v, t: None)
+        navigation = getattr(window, "navigationInterface", None)
+        if navigation is not None:
+            navigation.setIndicatorAnimationEnabled(False)
         qtbot.addWidget(window)
 
         assert window is not None
 
-        window.close()
-        window.deleteLater()
+        _close_window(window, qtbot)
 
 
 # =============================================================================
@@ -576,7 +629,7 @@ class TestAsyncOperations:
 class TestMainWorkflowPerformance:
     """主工作流性能测试"""
 
-    def test_window_init_time(self):
+    def test_window_init_time(self, qapp):
         """测试窗口初始化时间"""
         if main_window_module is None:
             pytest.skip("主窗口模块不可用")
@@ -587,25 +640,28 @@ class TestMainWorkflowPerformance:
             get_config_manager=MagicMock(),
             get_program_dir=MagicMock(return_value="/tmp"),
             FontManager=MagicMock(),
-            HomeInterface=MagicMock(),
-            SettingsInterface=MagicMock(),
-            InitializerInterface=MagicMock(),
-            EnvironmentInstallInterface=MagicMock(),
-            CodeGenerationInterface=MagicMock(),
-            TutorialInterface=MagicMock(),
-            TerminalInterface=MagicMock(),
-            FtpInterface=MagicMock(),
-            DataVisualizationInterface=MagicMock(),
-            ProtocolEditorInterface=MagicMock(),
-            AutopilotEditorInterface=MagicMock(),
-            FluentWindow=MagicMock(),
+            HomeInterface=MagicMock(return_value=MockInterfaceWidget()),
+            SettingsInterface=MagicMock(return_value=MockInterfaceWidget()),
+            InitializerInterface=MagicMock(return_value=MockInterfaceWidget()),
+            EnvironmentInstallInterface=MagicMock(return_value=MockInterfaceWidget()),
+            CodeGenerationInterface=MagicMock(return_value=MockInterfaceWidget()),
+            TutorialInterface=MagicMock(return_value=MockInterfaceWidget()),
+            TerminalInterface=MagicMock(return_value=MockInterfaceWidget()),
+            FtpInterface=MagicMock(return_value=MockInterfaceWidget()),
+            DataVisualizationInterface=MagicMock(return_value=MockInterfaceWidget()),
+            ProtocolEditorInterface=MagicMock(return_value=MockInterfaceWidget()),
+            AutopilotEditorInterface=MagicMock(return_value=MockInterfaceWidget()),
         ):
             from ui.main_window import MainWindow
 
             start_time = time.time()
             window = MainWindow(progress_callback=None)
+            navigation = getattr(window, "navigationInterface", None)
+            if navigation is not None:
+                navigation.setIndicatorAnimationEnabled(False)
             end_time = time.time()
 
             init_time = end_time - start_time
             # 验证初始化时间小于5秒（mock环境下应该很快）
             assert init_time < 5.0, f"Initialization took too long: {init_time}s"
+            _close_window(window)

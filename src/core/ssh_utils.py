@@ -4,8 +4,15 @@ SSH 连接工具模块
 """
 
 import paramiko
+import warnings
 from PyQt5.QtCore import QObject, QThread, pyqtSignal, pyqtSlot
 from typing import Optional, Dict, Any, Callable, Tuple, List
+
+warnings.filterwarnings(
+    "ignore",
+    message="sipPyTypeDict\\(\\) is deprecated.*",
+    category=DeprecationWarning,
+)
 
 
 class SSHConfig:

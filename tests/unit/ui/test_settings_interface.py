@@ -526,7 +526,7 @@ class TestSettingsSignals:
 class TestSettingsInterfaceMocked:
     """使用Mock的设置界面测试"""
 
-    def test_all_settings_saved(self):
+    def test_all_settings_saved(self, qapp):
         """测试所有设置项都被保存"""
         if settings_interface_module is None:
             pytest.skip("设置界面模块不可用")
@@ -540,8 +540,21 @@ class TestSettingsInterfaceMocked:
         ):
             from ui.interfaces.settings_interface import SettingsInterface
 
+            default_config = {
+                "font_size": "small",
+                "default_output_dir": r"C:\Projects",
+                "default_install_dir": r"C:\openEulerTools",
+                "ssh_host": "",
+                "ssh_username": "",
+                "ssh_password": "",
+                "auto_check_update": False,
+                "show_log_timestamp": True,
+                "confirm_before_init": True,
+            }
             mock_config = MagicMock()
-            mock_config.get = MagicMock(return_value="")
+            mock_config.get = MagicMock(
+                side_effect=lambda key, default=None: default_config.get(key, default)
+            )
             mock_config.set = MagicMock(return_value=True)
 
             with patch("ui.interfaces.settings_interface.get_config_manager", return_value=mock_config):
@@ -566,6 +579,8 @@ class TestSettingsInterfaceMocked:
                 assert "ssh_host" in keys_saved
                 assert "ssh_username" in keys_saved
                 assert "ssh_password" in keys_saved
+                interface.close()
+                interface.deleteLater()
 
 
 # =============================================================================

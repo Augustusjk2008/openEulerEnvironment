@@ -19,6 +19,7 @@ from pathlib import Path
 try:
     from PyQt5.QtWidgets import QApplication, QStackedWidget
     from PyQt5.QtCore import Qt
+    from PyQt5.QtGui import QPixmap
     from PyQt5.QtTest import QTest
     PYQT5_AVAILABLE = True
 except ImportError:
@@ -521,10 +522,10 @@ class TestHeroImageLabel:
         label = HeroImageLabel()
         qtbot.addWidget(label)
 
-        # Mock QPixmap
-        mock_pixmap = MagicMock()
-        mock_pixmap.isNull.return_value = False
+        pixmap = QPixmap(24, 24)
+        pixmap.fill(Qt.white)
 
-        label.set_source(mock_pixmap)
+        label.set_source(pixmap)
 
-        assert label._source == mock_pixmap
+        assert label._source.cacheKey() == pixmap.cacheKey()
+        assert label.pixmap() is not None

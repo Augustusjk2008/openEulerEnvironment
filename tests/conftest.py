@@ -22,6 +22,13 @@ SRC_PATH = PROJECT_ROOT / "src"
 if str(SRC_PATH) not in sys.path:
     sys.path.insert(0, str(SRC_PATH))
 
+try:
+    import pytestqt  # noqa: F401
+except ImportError:
+    PYTEST_QT_AVAILABLE = False
+else:
+    PYTEST_QT_AVAILABLE = True
+
 
 def pytest_configure(config):
     """配置pytest，注册自定义标记"""
@@ -73,11 +80,17 @@ def test_dir():
     return Path(__file__).parent
 
 
-# 提供 qtbot fixture（当 pytest-qt 不可用时返回 MagicMock）
-@pytest.fixture(scope="function")
-def qtbot():
-    """提供QtBot实例（fallback，当pytest-qt不可用时）"""
-    return MagicMock()
+if not PYTEST_QT_AVAILABLE:
+    @pytest.fixture(scope="session")
+    def qapp():
+        """提供QApplication实例fallback。"""
+        return MagicMock()
+
+
+    @pytest.fixture(scope="function")
+    def qtbot(qapp):
+        """提供QtBot实例fallback，当pytest-qt不可用时使用。"""
+        return MagicMock()
 
 
 @pytest.fixture(scope="function")

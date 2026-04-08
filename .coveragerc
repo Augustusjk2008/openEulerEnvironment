@@ -113,9 +113,6 @@ show_contexts = False
 # 输出文件
 output = tests/reports/coverage.xml
 
-# 是否包含包名
-include_package_name = True
-
 [paths]
 # 路径映射配置（用于合并不同机器上的覆盖率数据）
 
