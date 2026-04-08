@@ -1,297 +1,330 @@
-# AGENTS.md - RTopenEuler 系统管理工具项目指南
+# AGENTS.md - openEulerEnvironment 仓库协作指南
 
-## 项目概述
+## 项目定位
 
-**RTopenEuler 系统管理工具**是一个面向 openEuler 嵌入式开发环境的集成管理平台，由上海航天八院（803所）开发。该工具采用 PyQt5 + PyQt-Fluent-Widgets 构建，提供现代化的 Fluent 设计语言界面。
+`openEulerEnvironment` 是一个面向 RTopenEuler / openEuler 嵌入式开发环境的桌面管理工具，技术栈以 `PyQt5 + qfluentwidgets + paramiko + matplotlib` 为主。主要能力包括：
 
-### 核心功能
+- 开发环境安装与资源部署
+- 设备初始化与 SSH/SFTP 操作
+- 代码生成
+- 协议编辑与导出
+- 飞控算法编辑
+- SLOG 数据可视化
+- 教程文档展示
 
-| 功能模块 | 说明 |
-|---------|------|
-| 开发环境配置 | 一键部署编译器、依赖库、工具链，自动配置环境变量 |
-| 自动代码生成 | 根据产品型号和工程类型生成标准代码模板 |
-| 设备初始化向导 | 通过 SSH 远程完成 CCU 设备的出厂初始化配置 |
-| 远程终端 | SSH 交互式终端 |
-| FTP 客户端 | 本地与远端文件上传、下载、移动 |
-| 数据可视化 | 读取 SLOG 文件并绘制曲线 |
-| 协议编辑器 | 协议配置与管理 |
-| 算法编辑器 | 自动驾驶相关算法配置 |
-| 教程与文档 | 配置指南、代码示例、版本说明 |
+这个文件面向协作代理与维护者，重点说明“仓库现在是什么样”“应该怎样改”，而不是只做静态产品介绍。
 
 ---
 
-## 项目结构
+## 全局约束
 
+### 终端命令
+
+遵循 `C:\Users\JiangKai\.codex\RTK.md`：
+
+- 优先使用 `rtk <external-command>`
+- `rtk` 无法直接代理 PowerShell cmdlet 时，优先使用 `rtk python -c "..."` 读取信息
+- 只有在确实需要原始命令时再考虑 `rtk proxy ...`
+
+示例：
+
+```powershell
+rtk git status --short
+rtk rg --files
+rtk pytest tests/unit/core -q
+rtk python -c "from pathlib import Path; print(Path('src/main.py').read_text(encoding='utf-8'))"
 ```
+
+### 代码修改原则
+
+- 保持 `PyQt5 + qfluentwidgets` 现有交互风格，不要随意引入新的 UI 框架
+- 耗时任务不要阻塞主线程；已有界面普遍假设重操作应异步执行
+- 配置统一走 `ConfigManager`，不要在界面或业务逻辑里散落硬编码配置
+- SSH / FTP 密码默认不应硬编码到源码；当前默认值为空，靠 `settings.json` 或界面输入
+- 字体大小统一通过 `FontManager` 管理
+- 修改导航页时，优先复用 `MainWindow` 里的懒加载模式，不要把所有重页面改回启动时一次性构建
+
+---
+
+## 仓库结构
+
+当前仓库的关键目录与文件如下：
+
+```text
 openEulerEnvironment/
-├── src/                          # 源代码目录
-│   ├── main.py                   # 程序入口
-│   ├── core/                     # 核心功能模块
-│   │   ├── auth_manager.py       # 认证管理（登录/注册）
-│   │   ├── autopilot_codegen_cpp.py  # 自动驾驶代码生成
-│   │   ├── autopilot_document.py     # 自动驾驶文档处理
-│   │   ├── config_manager.py     # 配置管理器
-│   │   ├── font_manager.py       # 字体管理
-│   │   ├── protocol_schema.py    # 协议模式定义
-│   │   └── slog_parser.py        # SLOG 日志解析
-│   └── ui/                       # 用户界面模块
-│       ├── main_window.py        # 主窗口
-│       ├── loading_dialog.py     # 加载对话框
-│       ├── style_helper.py       # 样式辅助
-│       └── interfaces/           # 各功能界面
-│           ├── autopilot_editor_interface.py   # 算法编辑界面
-│           ├── code_generation_interface.py    # 代码生成界面
-│           ├── data_visualization_interface.py # 数据可视化界面
-│           ├── environment_install_interface.py # 环境安装界面
-│           ├── ftp_interface.py                # FTP 客户端界面
-│           ├── home_interface.py               # 首页
-│           ├── initializer_interface.py        # 设备初始化界面
-│           ├── login_interface.py              # 登录界面
-│           ├── protocol_editor_interface.py    # 协议编辑界面
-│           ├── settings_interface.py           # 设置界面
-│           ├── terminal_interface.py           # 远程终端界面
-│           └── tutorial_interface.py           # 教程界面
-├── docs/                         # 文档目录
-│   ├── images/                   # 文档图片
-│   ├── versions/                 # 版本历史
-│   ├── 00.本程序怎么使用.md       # 用户使用手册
+├── src/
+│   ├── main.py
+│   ├── core/
+│   │   ├── auth_manager.py
+│   │   ├── autopilot_codegen_cpp.py
+│   │   ├── autopilot_document.py
+│   │   ├── config_manager.py
+│   │   ├── font_manager.py
+│   │   ├── protocol_schema.py
+│   │   ├── slog_parser.py
+│   │   └── ssh_utils.py
+│   └── ui/
+│       ├── main_window.py
+│       ├── loading_dialog.py
+│       ├── style_helper.py
+│       └── interfaces/
+│           ├── autopilot_editor_interface.py
+│           ├── code_generation_interface.py
+│           ├── data_visualization_interface.py
+│           ├── environment_install_interface.py
+│           ├── ftp_interface.py
+│           ├── home_interface.py
+│           ├── initializer_interface.py
+│           ├── login_interface.py
+│           ├── protocol_editor_interface.py
+│           ├── settings_interface.py
+│           ├── terminal_interface.py
+│           └── tutorial_interface.py
+├── build_helpers/
+│   ├── cxfreeze_config.py
+│   ├── pyinstaller_pywin32.py
+│   └── pyi_rth_pywin32_compat.py
+├── tests/
+│   ├── unit/
+│   ├── integration/
+│   ├── e2e/
+│   ├── fixtures/
+│   ├── config/
+│   ├── reports/
+│   └── pytest.ini
+├── docs/
+│   ├── 00.本程序怎么使用.md
 │   ├── 01.示例工程怎么编译、调试、运行.md
 │   ├── 02.MB数据分发框架（MB_DDF）介绍.md
 │   ├── 03.RTopenEuler实时操作系统介绍.md
 │   ├── 04.RTopenEuler启动脚本详解.md
-│   └── environment_guide.md      # Python 环境操作指南
-├── requirements.txt              # Python 依赖
-├── run.bat                       # 运行/构建脚本
-├── pyimod04_pywin32.py          # PyInstaller Win7 兼容补丁
-└── .gitignore                    # Git 忽略配置
+│   ├── vm_setup_guide.md
+│   ├── vm_auto_config.md
+│   ├── versions/
+│   ├── review/
+│   └── superpowers/
+├── run.bat
+├── run_tests.bat
+├── run_tests.ps1
+├── openEulerManage.spec
+├── openEulerManage.exe.spec
+├── setup_cxfreeze.py
+├── requirements.txt
+├── requirements-cxfreeze38.txt
+└── pyimod04_pywin32.py
 ```
 
 ---
 
-## 技术栈
+## 运行与调试
 
-### 核心依赖
+### 应用入口
 
-| 依赖 | 版本 | 用途 |
-|-----|------|------|
-| PyQt5 | 5.15.9 | GUI 框架 |
-| qfluentwidgets | latest | Fluent Design 组件库 |
-| paramiko | 3.3.1 | SSH/FTP 连接 |
-| matplotlib | latest | 数据可视化 |
-| pyte | optional | 终端仿真 |
+主入口是 `src/main.py`，支持两个关键参数：
 
-### 开发/构建工具
+- `-d / --dir`：指定程序资源目录
+- `--skip-login`：跳过登录直接进入主页
 
-- **PyInstaller**: 打包为独立可执行文件
-- **conda**: Python 环境管理
+常用命令：
 
----
+```powershell
+rtk python src/main.py -d H:\Resources\RTLinux\Environment
+rtk python src/main.py -d H:\Resources\RTLinux\Environment --skip-login
+```
 
-## 运行与构建
+### 批处理入口
 
-### 开发模式运行
+`run.bat` 是项目约定的主要入口，当前支持：
 
-```bash
-# 简单启动（带资源目录）
-run.bat simple
+- `simple`
+- `dev`
+- `build`
+- `install`
+- `pack`
+- `all`
+- `cxfreeze-env`
+- `cxfreeze-build`
+- `cxfreeze-install`
+- `cxfreeze-all`
 
-# 开发模式（跳过登录）
+示例：
+
+```powershell
 run.bat dev
-
-# 或直接 Python 运行
-python src/main.py -d H:\Resources\RTLinux\Environment --skip-login
-```
-
-### 构建可执行文件
-
-```bash
-# 构建
 run.bat build
-
-# 安装到指定目录
-run.bat install
-
-# 一键构建+安装
-run.bat all
+run.bat cxfreeze-build
 ```
 
-### 命令行参数
+### 打包约束
 
-| 参数 | 说明 |
-|-----|------|
-| `-d, --dir` | 指定程序资源目录 |
-| `--skip-login` | 跳过登录界面直接进入主页 |
+- `PyInstaller` 打包要求当前解释器是 Python 3.8，否则 `run.bat build` / `all` 会直接失败
+- `cx_Freeze` 工作流也基于 Python 3.8，但会通过 `py -3.8` 自动创建独立虚拟环境 `.venvs\cxfreeze38`
+- 准备 `cx_Freeze` 本地 wheelhouse 时还需要一个 Python 3.11+ 解释器作为 bootstrap
+- Win7 兼容相关补丁在 `pyimod04_pywin32.py` 与 `build_helpers/` 中，修改打包链路时不要遗漏
 
 ---
 
-## 核心模块详解
+## 测试约定
 
-### 1. 配置管理 (config_manager.py)
+### pytest 入口
 
-**ConfigManager** 负责应用程序配置的读取、保存和管理。
+`tests/pytest.ini` 当前配置：
 
-**默认配置项：**
-```python
-{
-    "font_size": "small",              # 字体大小: small/medium/large
-    "remember_window_pos": False,      # 记住窗口位置
-    "default_output_dir": r"C:\Projects",
-    "default_install_dir": r"C:\openEulerTools",
-    "ssh_host": "192.168.137.100",     # SSH 默认主机
-    "ssh_username": "root",
-    "ssh_password": "Shanghaith8",
-    "ftp_host": "192.168.137.100",     # FTP 默认主机
-    "ftp_username": "root",
-    "ftp_password": "Shanghaith8",
-    "auto_check_update": False,
-    "show_log_timestamp": True,
-    "confirm_before_init": True,
-    "protocol_csv_dir": "",            # 协议 CSV 目录
-    "autopilot_json_dir": "",          # AutoPilot JSON 目录
-}
+- `testpaths = tests/unit, tests/integration, tests/e2e`
+- marker:
+  - `ubuntu_vm`
+  - `real_device`
+  - `slow`
+  - `gui`
+
+常用命令：
+
+```powershell
+rtk pytest tests/unit/core -v --tb=short
+rtk pytest tests/unit/ui -v --tb=short -m "not gui"
+rtk pytest tests/integration -v --tb=short
 ```
 
-**配置文件位置：** `settings.json`（程序目录下）
+### 自动化脚本
 
-### 2. 主窗口 (main_window.py)
+- `run_tests.bat`：CMD 测试入口
+- `run_tests.ps1`：PowerShell 测试入口
+- 两者都会尝试探测 Ubuntu VM `192.168.56.132`
+- 集成测试依赖环境变量 `UBUNTU_VM_AVAILABLE=1`
+- 真机测试依赖环境变量 `REAL_DEVICE_TEST=1`
 
-**MainWindow** 继承自 `FluentWindow`，提供导航栏和多个子界面。
+### 测试实现注意事项
 
-**界面加载顺序：**
-1. 首页 (Home)
-2. 环境配置 (Environment)
-3. 系统初始化 (Initializer)
-4. 代码生成 (CodeGen)
-5. 教程文档 (Tutorial)
-6. 远程终端 (Terminal)
-7. FTP 客户端 (FTP)
-8. 数据可视化 (Data Visualization)
-9. 协议编辑 (Protocol Editor)
-10. 算法编辑 (Autopilot Editor)
-11. 设置 (Settings)
-
-**窗口规格：**
-- 默认大小: 1700×1050 像素
-- 居中显示
-
-### 3. 登录认证 (auth_manager.py + login_interface.py)
-
-- 支持用户注册（需 16 位邀请码）
-- 登录成功后进入主窗口
-- 开发模式可跳过登录
-
-### 4. 代码生成 (code_generation_interface.py)
-
-支持的工程类型：
-- Hello_World
-- MB_DDF
-- Helm_Control
-- Auto_Pilot
-- Upgrade_And_Test
-- No8RtBus
-
-### 5. 设备初始化 (initializer_interface.py)
-
-通过 SSH 远程完成 CCU 设备出厂初始化：
-- 设置 root 密码
-- 创建目录结构
-- 上传必要文件
-- 配置动态库路径
-- 硬盘扩容
-- 运行安全测试
-- 配置系统时间并重启
+- 根目录 `conftest.py` 会在大量非 GUI 测试中 mock `PyQt5`、`qfluentwidgets`、`matplotlib` 等依赖
+- 修改 UI 导入路径、初始化时机或第三方依赖时，要确认不会破坏现有 mock 策略
+- 如果新增配置项、界面信号或导航页，至少补对应单元测试
 
 ---
 
-## 相关技术背景
+## 关键实现事实
 
-### RTopenEuler 实时操作系统
+### 配置系统
 
-- **基线**: openEuler 24.03 LTS + Linux 5.10 + preempt-rt 89补丁
-- **目标平台**: 瑞芯微 RK3588（ARM64）
-- **实时性能**:
-  - 最大中断延迟 < 8微秒
-  - 任务切换时间 < 5微秒
-  - 调度器抖动 < 10微秒
+`src/core/config_manager.py` 的当前行为：
 
-### MB_DDF 数据分发框架
+- 所有配置统一写入 `settings.json`
+- 配置文件位置取决于 `get_program_dir()`
+- 若命令行传入 `-d`，配置文件落在该目录
+- 若为打包运行，配置文件落在可执行文件所在目录
+- 若直接源码运行且未传 `-d`，配置文件落在 `src/core/` 目录
 
-- 基于共享内存的发布-订阅模式
-- 支持 C++ 与 Python 跨语言交互
-- 零拷贝数据传输
-- 时间确定性通信
+当前默认配置重点如下：
 
----
+- `font_size`: `small`
+- `remember_window_pos`: `False`
+- `window_pos`: `None`
+- `default_output_dir`: `C:\Projects`
+- `default_install_dir`: `C:\openEulerTools`
+- `ssh_*` / `ftp_*`: 默认空字符串
+- `protocol_csv_dir`: `""`
+- `autopilot_json_dir`: `""`
 
-## 开发规范
+修改配置项时：
 
-### 代码风格
+1. 先更新 `ConfigManager.DEFAULT_CONFIG`
+2. 如果用户可编辑，再同步更新 `SettingsInterface`
+3. 如果会影响启动流程或资源目录，再检查 `main.py` 与相关界面
 
-- 遵循 PEP 8 Python 编码规范
-- 使用类型注解提高代码可读性
-- 关键功能添加文档字符串
+### 主窗口与导航
 
-### 界面开发
+`src/ui/main_window.py` 当前不是简单的“全部页面一次性创建”模式，而是：
 
-- 使用 PyQt-Fluent-Widgets 组件保持界面一致性
-- 耗时操作使用多线程避免界面卡顿
-- 统一使用 FontManager 管理字体大小
+- `HomeInterface` 与 `SettingsInterface` 立即创建
+- 其余较重页面通过 `_LazyInterfaceHost` 懒加载
+- 页面首次切换时才真正构建控件
 
-### 配置管理
+当前导航注册顺序是：
 
-- 所有用户可配置项通过 ConfigManager 管理
-- 新增配置项需在 `DEFAULT_CONFIG` 中定义默认值
+1. 首页
+2. 环境配置
+3. 代码生成
+4. 远程终端
+5. FTP 客户端
+6. 数据可视化
+7. 协议编辑
+8. 算法编辑
+9. 系统初始化
+10. 教程文档
+11. 设置（底部）
 
----
+其他已知事实：
 
-## 常见问题
+- 窗口初始化会先 `resize(1700, 1050)`，随后 `showMaximized()`
+- 数据可视化页会根据 FTP 连接状态同步可用性
+- 关闭窗口前会清理导航动画状态，避免已销毁对象被延迟回调访问
 
-### 1. 资源目录设置
+### 字体与设置页
 
-程序运行需要指定资源目录（包含 assets、templates 等）：
-```bash
-python src/main.py -d H:\Resources\RTLinux\Environment
-```
+- 字体大小分为 `small / medium / large`
+- 设置页保存字体大小后，当前逻辑仍要求重启应用才能完全生效
+- 新界面应继续使用 `FontManager` 提供的字号，而不是各自定义魔法数字
 
-### 2. 字体管理
+### 协议与编辑器相关
 
-字体大小分三级：small(10px)、medium(13px)、large(16px)
-修改后需重启应用生效。
+基于 `docs/versions/0.0.8.txt` 和现有源码，当前代码线已包含：
 
-### 3. SSH/FTP 连接
+- 协议 `RESERVED` 字段类型支持
+- 协议导出 Word 文档能力
+- 飞控算法编辑器与相关文档处理/代码生成模块
+- C++ 代码生成增强
 
-默认连接目标设备：
-- IP: 192.168.1.29
-- 用户名: root
-- 密码: Shanghaith8
+如果继续扩展协议字段模型，请同步检查：
 
-### 4. 打包问题
-
-- 使用 PyInstaller 打包时包含 `--hidden-import pyimod04_pywin32` 以支持 Win7
-- 打包前确保所有依赖已安装
-
----
-
-## 版本历史
-
-| 版本 | 日期 | 主要更新 |
-|-----|------|---------|
-| v0.0.7 | - | 最新版本 |
-| v0.0.6 | - | - |
-| v0.0.5 | 2026-01-13 | 抢先版发布 |
-
----
-
-## 参考资料
-
-- [PyQt-Fluent-Widgets 文档](https://qfluentwidgets.com/)
-- [RTopenEuler 操作系统文档](docs/03.RTopenEuler实时操作系统介绍.md)
-- [MB_DDF 框架文档](docs/02.MB数据分发框架（MB_DDF）介绍.md)
-- [用户使用手册](docs/00.本程序怎么使用.md)
+- `src/core/protocol_schema.py`
+- `src/core/autopilot_codegen_cpp.py`
+- `src/ui/interfaces/protocol_editor_interface.py`
+- 对应 `tests/unit/core/` 与 `tests/unit/ui/`
 
 ---
 
-## 开发团队
+## 常见修改建议
 
-- **开发单位**: 上海航天八院 803所
-- **项目用途**: 面向 openEuler 嵌入式开发环境的集成管理平台
+### 新增设置项
+
+- 加入 `ConfigManager.DEFAULT_CONFIG`
+- 在 `SettingsInterface` 增加加载、编辑、保存逻辑
+- 如果该设置影响启动阶段，检查 `main.py` / `MainWindow`
+
+### 新增导航页
+
+- 在 `src/ui/interfaces/` 新增界面
+- 优先在 `MainWindow` 中按懒加载方式注册
+- 从首页跳转时同步补连接信号
+- 增加至少一份导航或界面初始化测试
+
+### 修改打包流程
+
+- 同时检查 `run.bat`
+- 同时检查 `setup_cxfreeze.py`
+- 同时检查 `build_helpers/`
+- 同时检查 `pyimod04_pywin32.py`
+- 不要破坏 Win7 兼容目标与 Python 3.8 约束
+
+---
+
+## 参考文档
+
+- 用户手册：`docs/00.本程序怎么使用.md`
+- 示例工程说明：`docs/01.示例工程怎么编译、调试、运行.md`
+- MB_DDF 文档：`docs/02.MB数据分发框架（MB_DDF）介绍.md`
+- RTopenEuler 背景：`docs/03.RTopenEuler实时操作系统介绍.md`
+- 启动脚本说明：`docs/04.RTopenEuler启动脚本详解.md`
+- VM 搭建/自动化：`docs/vm_setup_guide.md`、`docs/vm_auto_config.md`
+- 最新版本记录：`docs/versions/0.0.8.txt`
+
+---
+
+## 维护要求
+
+出现以下变化时，必须同步更新本文件：
+
+- 目录结构发生调整
+- 运行命令、测试命令或打包链路变化
+- 新增或删除主导航页
+- 配置项默认值或配置文件落点变化
+- 测试基础设施、VM 地址、设备接入方式变化

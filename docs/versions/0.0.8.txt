@@ -1,0 +1,68 @@
+Release Date: 2026-04-08
+
+feat: 添加cx_Freeze打包支持及相关改进
+
+添加cx_Freeze打包配置和工具链支持，包括：
+- 新增build_helpers模块包含打包配置和工具
+- 更新pyimod04_pywin32兼容层
+- 添加cx_Freeze打包脚本和依赖文件
+- 扩展run.bat支持cx_Freeze工作流
+- 改进测试用例和验证脚本
+
+重构部分代码以提高可维护性：
+- 优化主窗口关闭逻辑
+- 改进测试用例资源清理
+- 更新SSH工具模块的警告处理
+
+feat(protocol): 新增RESERVED字段类型支持
+
+新增RESERVED协议字段类型，支持在原始帧中占位但不参与解析和日志输出。主要变更包括：
+- 在协议模式定义中添加RESERVED类型选项
+- 实现字段验证、布局计算和代码生成逻辑
+- 更新协议编辑器UI以支持RESERVED字段配置
+- 添加单元测试覆盖新功能
+
+RESERVED字段特性：
+- 可指定任意正数字节长度
+- 有效时参与原始帧布局和解析帧结构体
+- 无效时仅参与原始帧布局
+- 不参与unpack赋值和schema构建
+
+feat(test): 添加测试框架和UI/设备测试准备
+
+- 创建完整的测试目录结构，包含单元测试、集成测试和E2E测试
+- 添加pytest配置文件和全局fixture配置
+- 实现UI模块的延迟导入机制，避免测试时导入错误
+- 移除.gitignore中的tests/目录排除规则
+- 添加VM自动配置和SSH免密登录支持
+- 创建设备测试计划和检查清单
+- 修复主窗口最大化显示和配置管理器默认值
+- 添加C++代码生成器的注释修复和测试覆盖率配置
+- 提供自动化测试运行脚本（CMD和PowerShell）
+
+fix(构建): 修复Windows 7下PyInstaller构建问题并改进文件保存处理
+
+添加pyimod04_pywin32.py以解决Windows 7下的PyInstaller加载问题
+重构run.bat构建脚本，使用统一参数变量
+改进协议编辑器的文件保存逻辑，添加错误处理和临时文件机制
+
+feat(editor): 添加C++代码生成功能并改进编辑器界面
+
+refactor(document): 优化控制器文档规范化逻辑
+
+style(home): 简化功能卡片标题显示
+
+feat(autopilot): 添加飞控算法编辑器及相关功能支持
+
+- 在配置管理器中新增 autopilot_json_dir 配置项
+- 添加 AutopilotEditorInterface 界面组件
+- 实现算法编辑器的核心功能模块 autopilot_document.py
+- 扩展主窗口功能区域布局以容纳新编辑器
+- 新增算法编辑页面切换逻辑和信号处理
+
+feat(protocol_editor): 新增协议导出Word文档功能
+
+- 实现协议字段导出为Word文档功能，支持表格格式展示字段信息
+- 添加计算位域位置和分组信息的工具函数
+- 优化代码生成逻辑，支持隐式数组处理
+- 为BIT类型字段添加行高亮显示
