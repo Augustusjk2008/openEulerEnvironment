@@ -10,26 +10,28 @@ echo   Test Automation Runner
 echo ========================================
 echo.
 
-REM Activate conda environment
-call conda activate pyqt5_env
-
-REM Check if conda environment is activated
-if errorlevel 1 (
-    echo Error: Failed to activate conda environment pyqt5_env
-    exit /b 1
-)
-
 echo [1/5] Environment check...
 python --version
+if errorlevel 1 (
+    echo Error: Python is not available in the current environment
+    exit /b 1
+)
 echo.
 
+set "VM_HOST=%UBUNTU_VM_HOST%"
+set "VM_USER=%UBUNTU_VM_USER%"
+
 echo [2/5] Verify VM connection...
-ssh -o PasswordAuthentication=no -o ConnectTimeout=2 jiangkai@192.168.56.132 "echo VM_OK" 2>nul
-if %errorlevel% == 0 (
-    echo VM 192.168.56.132 connected
-    set UBUNTU_VM_AVAILABLE=1
+if defined VM_HOST if defined VM_USER (
+    ssh -o PasswordAuthentication=no -o ConnectTimeout=2 %VM_USER%@%VM_HOST% "echo VM_OK" 2>nul
+    if %errorlevel% == 0 (
+        echo VM %VM_HOST% connected
+        set UBUNTU_VM_AVAILABLE=1
+    ) else (
+        echo VM %VM_HOST% not connected, integration tests skipped
+    )
 ) else (
-    echo VM 192.168.56.132 not connected, integration tests skipped
+    echo VM probe skipped. Set UBUNTU_VM_USER and UBUNTU_VM_HOST to enable integration tests.
 )
 echo.
 

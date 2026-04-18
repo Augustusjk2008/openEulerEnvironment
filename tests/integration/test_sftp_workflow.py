@@ -1,8 +1,10 @@
 """
 SFTP文件传输集成测试
 
-需要Ubuntu虚拟机环境（192.168.56.132）
-通过环境变量 UBUNTU_VM_AVAILABLE=1 启用
+需要通过环境变量提供 Ubuntu 虚拟机配置：
+- UBUNTU_VM_HOST
+- UBUNTU_VM_USER
+- 可选 UBUNTU_VM_KEY
 """
 
 import os
@@ -72,8 +74,8 @@ def sftp_client(ssh_config):
 def remote_test_dir(ssh_config):
     """提供远程测试目录路径"""
     config = ssh_config.get("ubuntu_vm", {})
-    # 使用固定目录避免时序问题
-    test_dir = "/home/jiangkai/sftp_test/test_data"
+    base_test_dir = config.get("test_dir") or "/tmp/openeuler_vm_sftp"
+    test_dir = f"{base_test_dir}/test_data"
 
     try:
         import paramiko

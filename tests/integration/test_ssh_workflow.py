@@ -1,8 +1,10 @@
 """
 SSH工作流集成测试
 
-需要Ubuntu虚拟机环境（192.168.56.132）
-通过环境变量 UBUNTU_VM_AVAILABLE=1 启用
+需要通过环境变量提供 Ubuntu 虚拟机配置：
+- UBUNTU_VM_HOST
+- UBUNTU_VM_USER
+- 可选 UBUNTU_VM_KEY
 """
 
 import os

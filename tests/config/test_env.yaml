@@ -1,14 +1,12 @@
 # 测试环境配置文件
-# Ubuntu虚拟机配置 (已配置SSH免密登录)
+# Ubuntu 虚拟机配置通过环境变量提供
 
 ubuntu_vm:
-  host: "192.168.56.132"
+  host: "{{UBUNTU_VM_HOST}}"
   port: 22
-  username: "jiangkai"
-  # 使用SSH密钥认证（免密）
-  private_key: "~/.ssh/id_rsa"
-  # password 不再使用，保留作为备用
-  # password: "edwardjk2003"
+  username: "{{UBUNTU_VM_USER}}"
+  private_key: "{{UBUNTU_VM_KEY:-~/.ssh/id_rsa}}"
+  test_dir: "{{UBUNTU_VM_TEST_DIR:-/home/testuser/sftp_test}}"
 
 # 真实设备配置
 real_device:
@@ -39,6 +37,9 @@ sftp:
   verify_checksum: true  # 是否验证文件校验和
 
 # 环境控制变量说明
-# UBUNTU_VM_AVAILABLE=1  - 启用Ubuntu虚拟机测试
-# REAL_DEVICE_TEST=1     - 启用真实设备测试
-# TEST_ENV_PASSWORD      - 默认测试密码（如未设置特定密码则使用）
+# UBUNTU_VM_HOST         - Ubuntu VM host or IP
+# UBUNTU_VM_USER         - Ubuntu VM username
+# UBUNTU_VM_KEY          - Optional SSH private key path
+# UBUNTU_VM_TEST_DIR     - Optional remote working directory
+# UBUNTU_VM_AVAILABLE=1  - Automatically set by test helpers when VM probe succeeds
+# REAL_DEVICE_TEST=1     - Enables real-device tests

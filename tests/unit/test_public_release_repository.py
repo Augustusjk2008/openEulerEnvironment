@@ -41,3 +41,31 @@ def test_user_manual_uses_current_version_and_no_missing_public_images():
         "data_visualization_remote_dialog.png",
     ]:
         assert missing_image not in content
+
+
+def test_public_scripts_do_not_hardcode_local_paths_or_conda_env():
+    banned = [
+        "H:\\Resources\\RTLinux\\Environment",
+        "conda activate pyqt5_env",
+    ]
+    for relative_path in ["run.bat", "run_tests.bat", "run_tests.ps1"]:
+        content = read_text(relative_path)
+        for needle in banned:
+            assert needle not in content
+
+
+def test_vm_defaults_are_examples_not_personal_machine_values():
+    banned = [
+        "192.168.56.132",
+        "jiangkai@",
+        'username: "jiangkai"',
+    ]
+    for relative_path in [
+        "run_tests.bat",
+        "run_tests.ps1",
+        "tests/integration/conftest.py",
+        "tests/config/test_env.yaml",
+    ]:
+        content = read_text(relative_path)
+        for needle in banned:
+            assert needle not in content
