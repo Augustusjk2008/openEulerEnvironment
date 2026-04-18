@@ -69,3 +69,25 @@ def test_vm_defaults_are_examples_not_personal_machine_values():
         content = read_text(relative_path)
         for needle in banned:
             assert needle not in content
+
+
+def test_public_packaging_script_exposes_only_pyinstaller_commands():
+    content = read_text("run.bat")
+    assert "openEulerManage.spec" in content
+    assert "cxfreeze-env" not in content
+    assert "cxfreeze-build" not in content
+    assert "cxfreeze-install" not in content
+    assert "cxfreeze-all" not in content
+    assert "setup_cxfreeze.py" not in content
+    assert "requirements-cxfreeze38.txt" not in content
+
+
+def test_public_repo_keeps_one_tracked_pyinstaller_spec_and_no_cxfreeze_files():
+    assert (ROOT / "openEulerManage.spec").exists()
+    for relative_path in [
+        "setup_cxfreeze.py",
+        "build_helpers/cxfreeze_config.py",
+        "requirements-cxfreeze38.txt",
+        "tests/unit/test_cxfreeze_config.py",
+    ]:
+        assert not (ROOT / relative_path).exists(), relative_path
