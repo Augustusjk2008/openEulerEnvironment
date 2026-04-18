@@ -3,6 +3,7 @@ import sys
 
 from cx_Freeze import Executable, setup
 
+from src.app_metadata import APP_VERSION
 from build_helpers.cxfreeze_config import TARGET_NAME, get_build_exe_options
 
 
@@ -22,7 +23,7 @@ executables = [
 
 setup(
     name="openEulerManage_cxfreeze",
-    version="0.0.7",
+    version=APP_VERSION,
     description="RTopenEuler system management tool",
     options={"build_exe": build_exe_options},
     executables=executables,

@@ -16,6 +16,7 @@ from qfluentwidgets import (
     FluentIcon as FIF, IconWidget
 )
 from PyQt5.QtGui import QPalette, QColor
+from app_metadata import APP_DISPLAY_NAME, APP_RELEASE_LABEL
 from core.font_manager import FontManager
 
 class NavigationBar(QFrame):
@@ -45,7 +46,7 @@ class NavigationBar(QFrame):
         self.logo_label.setFixedSize(36, 36)
 
         # 程序名称
-        self.app_name = SubtitleLabel("803所 RTopenEuler 系统管理工具")
+        self.app_name = SubtitleLabel(APP_DISPLAY_NAME)
         self.app_name.setStyleSheet(f"font-size: {FontManager.get_font_size('large_title')}px; font-weight: 600;")
 
         # 设置按钮
@@ -300,7 +301,7 @@ class StatusBar(QFrame):
         layout.setContentsMargins(30, 10, 30, 10)
 
         # 左侧：版本信息
-        version_label = CaptionLabel("v0.0.6 抢先版")
+        version_label = CaptionLabel(APP_RELEASE_LABEL)
         version_label.setStyleSheet(f"color: #7A8A9A; font-size: {FontManager.get_font_size('caption')}px;")
 
         layout.addWidget(version_label)
