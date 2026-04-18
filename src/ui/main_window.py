@@ -1,10 +1,10 @@
-import os
 import warnings
 from PyQt5.QtWidgets import QApplication, QWidget, QVBoxLayout
 from PyQt5.QtGui import QIcon
 from qfluentwidgets import FluentWindow, NavigationItemPosition, FluentIcon
-from core.config_manager import get_config_manager, get_program_dir
+from core.config_manager import get_config_manager
 from core.font_manager import FontManager
+from ui.resource_utils import get_asset_path
 
 # 导入自定义界面
 from ui.interfaces.home_interface import HomeInterface
@@ -232,7 +232,9 @@ class MainWindow(FluentWindow):
     def init_window(self):
         self.resize(1700, 1050)
         self.setWindowTitle('RTopenEuler 系统管理工具')
-        self.setWindowIcon(QIcon(os.path.join(get_program_dir(), "assets", "logo.png")))
+        icon_path = get_asset_path("logo.png")
+        if icon_path:
+            self.setWindowIcon(QIcon(icon_path))
 
         # 窗口最大化显示
         self.showMaximized()

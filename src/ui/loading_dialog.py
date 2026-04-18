@@ -1,4 +1,3 @@
-import os
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QIcon, QPixmap
 from PyQt5.QtWidgets import (
@@ -11,7 +10,7 @@ from PyQt5.QtWidgets import (
     QSizePolicy,
 )
 
-from core.config_manager import get_program_dir
+from ui.resource_utils import get_asset_path
 
 
 class LoadingDialog(QDialog):
@@ -56,13 +55,13 @@ class LoadingDialog(QDialog):
         self._load_image()
 
     def _apply_icon(self):
-        icon_path = os.path.join(get_program_dir(), "assets", "logo.png")
-        if os.path.exists(icon_path):
+        icon_path = get_asset_path("logo.png")
+        if icon_path:
             self.setWindowIcon(QIcon(icon_path))
 
     def _load_image(self):
-        image_path = os.path.join(get_program_dir(), "assets", self._image_name)
-        if os.path.exists(image_path):
+        image_path = get_asset_path(self._image_name)
+        if image_path:
             pixmap = QPixmap(image_path)
             if not pixmap.isNull():
                 self._source = pixmap

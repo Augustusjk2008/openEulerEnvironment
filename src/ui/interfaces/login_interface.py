@@ -2,7 +2,6 @@
 Login/Register window shown before the main app.
 """
 
-import os
 from PyQt5.QtCore import Qt, pyqtSignal, QTimer
 from PyQt5.QtGui import QPixmap, QIcon
 from PyQt5.QtWidgets import (
@@ -15,8 +14,8 @@ from qfluentwidgets import (
 )
 
 from core.auth_manager import AuthManager
-from core.config_manager import get_program_dir
 from core.font_manager import FontManager
+from ui.resource_utils import get_asset_path
 
 
 class LoginWindow(QWidget):
@@ -33,7 +32,9 @@ class LoginWindow(QWidget):
         self.auth_manager = AuthManager()
         self.setWindowTitle("RTopenEuler 登录")
         self.setFixedSize(1120, 680)
-        self.setWindowIcon(QIcon(os.path.join(get_program_dir(), "assets", "logo.png")))
+        icon_path = get_asset_path("logo.png")
+        if icon_path:
+            self.setWindowIcon(QIcon(icon_path))
         self.setStyleSheet("""
             QWidget#loginWindow {
                 background: qlineargradient(
@@ -248,8 +249,8 @@ class LoginWindow(QWidget):
     def _load_hero_image(self):
         if self._hero_image_loaded or self._hero_image_label is None:
             return
-        image_path = os.path.join(get_program_dir(), "assets", "login_hero.png")
-        if os.path.exists(image_path):
+        image_path = get_asset_path("login_hero.png")
+        if image_path:
             pixmap = QPixmap(image_path)
             if not pixmap.isNull():
                 self._hero_image_label.set_source(pixmap)
