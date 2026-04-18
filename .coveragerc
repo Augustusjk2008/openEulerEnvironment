@@ -120,4 +120,3 @@ output = tests/reports/coverage.xml
 source =
     src/
     */src/
-    H:\WorkSpace\PythonWorkspace\openEulerEnvironment\src\

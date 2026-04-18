@@ -9,6 +9,7 @@ __pycache__/
 *$py.class
 *.so
 .Python
+.coverage
 
 # Virtual environments
 venv/
@@ -33,9 +34,6 @@ Thumbs.db
 # Project specific
 references/
 
-# PyInstaller
-*.spec
-
 # Logs
 *.log
 
@@ -44,6 +42,3 @@ Todo.md
 
 # Local caches
 .cache/
-
-# Claude
-.claude/
