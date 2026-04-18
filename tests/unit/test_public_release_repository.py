@@ -91,3 +91,21 @@ def test_public_repo_keeps_one_tracked_pyinstaller_spec_and_no_cxfreeze_files():
         "tests/unit/test_cxfreeze_config.py",
     ]:
         assert not (ROOT / relative_path).exists(), relative_path
+
+
+def test_public_docs_describe_single_pyinstaller_packaging_path():
+    readme = read_text("README.md")
+    assert "PyInstaller" in readme
+    assert "cx_Freeze" not in readme
+    assert "setup_cxfreeze.py" not in readme
+
+    agents = read_text("AGENTS.md")
+    assert "PyInstaller" in agents
+    assert "cx_Freeze" not in agents
+    assert "cxfreeze-env" not in agents
+    assert "cxfreeze-build" not in agents
+    assert "cxfreeze-install" not in agents
+    assert "cxfreeze-all" not in agents
+    assert "setup_cxfreeze.py" not in agents
+    assert "requirements-cxfreeze38.txt" not in agents
+    assert "cxfreeze_config.py" not in agents

@@ -67,8 +67,9 @@ Other test tiers:
 ## Packaging Notes
 
 - `run.bat` contains convenience commands for local Windows workflows
-- `setup_cxfreeze.py` and `openEulerManage.spec` are retained for Windows packaging maintenance
-- Windows 7 compatibility constraints still apply to the legacy packaging flow
+- `run.bat build` uses PyInstaller to produce the Windows onedir package
+- Packaging for Win7 compatibility must be run with Python 3.8
+- `pyimod04_pywin32.py` and `build_helpers/pyinstaller_pywin32.py` are retained for the Windows packaging flow
 
 ## Repository Status
 

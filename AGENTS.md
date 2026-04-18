@@ -81,7 +81,6 @@ openEulerEnvironment/
 │           ├── terminal_interface.py
 │           └── tutorial_interface.py
 ├── build_helpers/
-│   ├── cxfreeze_config.py
 │   ├── pyinstaller_pywin32.py
 │   └── pyi_rth_pywin32_compat.py
 ├── tests/
@@ -107,10 +106,7 @@ openEulerEnvironment/
 ├── run_tests.bat
 ├── run_tests.ps1
 ├── openEulerManage.spec
-├── openEulerManage.exe.spec
-├── setup_cxfreeze.py
 ├── requirements.txt
-├── requirements-cxfreeze38.txt
 └── pyimod04_pywin32.py
 ```
 
@@ -142,24 +138,18 @@ rtk python src/main.py -d H:\Resources\RTLinux\Environment --skip-login
 - `install`
 - `pack`
 - `all`
-- `cxfreeze-env`
-- `cxfreeze-build`
-- `cxfreeze-install`
-- `cxfreeze-all`
 
 示例：
 
 ```powershell
 run.bat dev
 run.bat build
-run.bat cxfreeze-build
+run.bat all
 ```
 
 ### 打包约束
 
 - `PyInstaller` 打包要求当前解释器是 Python 3.8，否则 `run.bat build` / `all` 会直接失败
-- `cx_Freeze` 工作流也基于 Python 3.8，但会通过 `py -3.8` 自动创建独立虚拟环境 `.venvs\cxfreeze38`
-- 准备 `cx_Freeze` 本地 wheelhouse 时还需要一个 Python 3.11+ 解释器作为 bootstrap
 - Win7 兼容相关补丁在 `pyimod04_pywin32.py` 与 `build_helpers/` 中，修改打包链路时不要遗漏
 
 ---
@@ -300,7 +290,7 @@ rtk pytest tests/integration -v --tb=short
 ### 修改打包流程
 
 - 同时检查 `run.bat`
-- 同时检查 `setup_cxfreeze.py`
+- 同时检查 `openEulerManage.spec`
 - 同时检查 `build_helpers/`
 - 同时检查 `pyimod04_pywin32.py`
 - 不要破坏 Win7 兼容目标与 Python 3.8 约束
