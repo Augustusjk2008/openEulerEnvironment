@@ -73,4 +73,6 @@ Other test tiers:
 
 ## Repository Status
 
-This repository is being prepared for a minimal public release. The current cleanup focuses on repository hygiene, public documentation, and a stable open-source baseline rather than on large architectural changes.
+Current public release: `v1.0` (2026-04-19).
+
+The repository keeps its Windows desktop focus and public CI baseline, with packaging and public-facing docs aligned to the `v1.0` release.

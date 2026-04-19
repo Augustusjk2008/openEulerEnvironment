@@ -256,7 +256,7 @@ rtk pytest tests/integration -v --tb=short
 
 ### 协议与编辑器相关
 
-基于 `docs/versions/0.0.8.txt` 和现有源码，当前代码线已包含：
+基于 `docs/versions/0.0.8.txt`、`docs/versions/1.0.txt` 和现有源码，当前代码线已包含：
 
 - 协议 `RESERVED` 字段类型支持
 - 协议导出 Word 文档能力
@@ -305,7 +305,7 @@ rtk pytest tests/integration -v --tb=short
 - RTopenEuler 背景：`docs/03.RTopenEuler实时操作系统介绍.md`
 - 启动脚本说明：`docs/04.RTopenEuler启动脚本详解.md`
 - VM 搭建/自动化：`docs/vm_setup_guide.md`、`docs/vm_auto_config.md`
-- 最新版本记录：`docs/versions/0.0.8.txt`
+- 最新版本记录：`docs/versions/1.0.txt`
 
 ---
 

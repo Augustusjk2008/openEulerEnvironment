@@ -33,7 +33,7 @@ def test_requirements_include_public_runtime_dependencies():
 
 def test_user_manual_uses_current_version_and_no_missing_public_images():
     content = read_text("docs/00.本程序怎么使用.md")
-    assert "v0.0.8" in content
+    assert "v1.0" in content
     for missing_image in [
         "login_page.png",
         "ftp_page.png",
