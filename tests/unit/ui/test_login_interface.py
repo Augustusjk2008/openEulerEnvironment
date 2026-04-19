@@ -15,6 +15,8 @@ import pytest
 from unittest.mock import patch, MagicMock, Mock
 from pathlib import Path
 
+pytestmark = pytest.mark.gui
+
 # 尝试导入PyQt5相关模块
 try:
     from PyQt5.QtWidgets import QApplication, QStackedWidget
