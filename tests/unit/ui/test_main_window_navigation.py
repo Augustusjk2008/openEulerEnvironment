@@ -14,6 +14,8 @@ QApplication 单例处理策略：
 import pytest
 from unittest.mock import patch, MagicMock, Mock
 
+pytestmark = pytest.mark.gui
+
 # 尝试导入 PyQt5 相关模块
 try:
     from PyQt5.QtWidgets import QApplication, QWidget
