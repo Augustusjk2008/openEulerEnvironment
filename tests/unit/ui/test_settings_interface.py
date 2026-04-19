@@ -15,6 +15,8 @@ from unittest.mock import patch, MagicMock, Mock, call
 from pathlib import Path
 import json
 
+pytestmark = pytest.mark.gui
+
 # 尝试导入PyQt5相关模块
 try:
     from PyQt5.QtWidgets import QApplication, QRadioButton, QLineEdit
