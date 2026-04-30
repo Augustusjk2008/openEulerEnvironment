@@ -33,6 +33,7 @@ Thumbs.db
 
 # Project specific
 references/
+.env
 
 # Logs
 *.log
@@ -42,3 +43,5 @@ Todo.md
 
 # Local caches
 .cache/
+.tcb/
+docs/superpowers/plans/

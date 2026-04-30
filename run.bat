@@ -1,5 +1,6 @@
 @echo off
 setlocal
+call :load_dotenv
 
 set "PYI_SPEC=openEulerManage.spec"
 set "BUILD_DIR=dist\openEulerManage"
@@ -86,6 +87,13 @@ if "%~1"=="all" (
 
 goto help
 
+:load_dotenv
+if not exist "%~dp0.env" goto :eof
+for /f "usebackq eol=# tokens=1,* delims==" %%A in ("%~dp0.env") do (
+    if not "%%~A"=="" set "%%~A=%%~B"
+)
+goto :eof
+
 :clean_pyinstaller_artifacts
 echo Cleaning previous PyInstaller build artifacts...
 powershell -ExecutionPolicy Bypass -Command "if (Test-Path '%BUILD_DIR%') { Remove-Item -LiteralPath '%BUILD_DIR%' -Recurse -Force }; if (Test-Path '%BUILD_ALT_EXE%') { Remove-Item -LiteralPath '%BUILD_ALT_EXE%' -Force }; if (Test-Path '%BUILD_WORK_DIR%') { Remove-Item -LiteralPath '%BUILD_WORK_DIR%' -Recurse -Force }; if (Test-Path '%BUILD_ALT_WORK_DIR%') { Remove-Item -LiteralPath '%BUILD_ALT_WORK_DIR%' -Recurse -Force }"
@@ -120,4 +128,5 @@ echo.
 echo [Environment Variables]
 echo OPENEULER_RESOURCE_DIR - optional resource directory passed to src/main.py -d
 echo OPENEULER_INSTALL_DIR  - required for install and packaging copy steps
+echo Values can be loaded from a .env file in the repo root.
 goto :eof

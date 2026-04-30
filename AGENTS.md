@@ -18,23 +18,6 @@
 
 ## 全局约束
 
-### 终端命令
-
-遵循 `C:\Users\JiangKai\.codex\RTK.md`：
-
-- 优先使用 `rtk <external-command>`
-- `rtk` 无法直接代理 PowerShell cmdlet 时，优先使用 `rtk python -c "..."` 读取信息
-- 只有在确实需要原始命令时再考虑 `rtk proxy ...`
-
-示例：
-
-```powershell
-rtk git status --short
-rtk rg --files
-rtk pytest tests/unit/core -q
-rtk python -c "from pathlib import Path; print(Path('src/main.py').read_text(encoding='utf-8'))"
-```
-
 ### 代码修改原则
 
 - 保持 `PyQt5 + qfluentwidgets` 现有交互风格，不要随意引入新的 UI 框架
@@ -124,8 +107,8 @@ openEulerEnvironment/
 常用命令：
 
 ```powershell
-rtk python src/main.py -d H:\Resources\RTLinux\Environment
-rtk python src/main.py -d H:\Resources\RTLinux\Environment --skip-login
+python src/main.py -d H:\Resources\RTLinux\Environment
+python src/main.py -d H:\Resources\RTLinux\Environment --skip-login
 ```
 
 ### 批处理入口

@@ -1,0 +1,18 @@
+{
+    "font_size": "small",
+    "remember_window_pos": false,
+    "window_pos": null,
+    "default_output_dir": "C:\\Projects",
+    "default_install_dir": "C:\\openEulerTools",
+    "ssh_host": "",
+    "ssh_username": "",
+    "ssh_password": "",
+    "ftp_host": "",
+    "ftp_username": "",
+    "ftp_password": "",
+    "auto_check_update": false,
+    "show_log_timestamp": true,
+    "confirm_before_init": true,
+    "protocol_csv_dir": "",
+    "autopilot_json_dir": ""
+}
