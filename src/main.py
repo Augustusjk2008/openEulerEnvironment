@@ -2,7 +2,6 @@ import argparse
 import os
 import sys
 from PyQt5.QtWidgets import QApplication
-from PyQt5.QtCore import QTimer
 
 # 将 src 目录添加到 sys.path 以支持绝对导入
 src_dir = os.path.dirname(os.path.abspath(__file__))
@@ -58,10 +57,9 @@ def main():
     def _bootstrap():
         config_manager = get_config_manager()
         font_size_name = config_manager.get("font_size", "small")
-        FontManager.set_size(font_size_name)
+        FontManager.apply_global_font(font_size_name)
     
         if args.skip_login:
-            FontManager.apply_global_font(font_size_name)
             _start_main_window()
             return
 
@@ -72,13 +70,10 @@ def main():
             _start_main_window()
 
         login_window.login_success.connect(_on_login_success)
-        login_window.show()
-        QApplication.processEvents()
         main_holder["login"] = login_window
+        login_window.show()
 
-        QTimer.singleShot(0, lambda: FontManager.apply_global_font(font_size_name))
-
-    QTimer.singleShot(0, _bootstrap)
+    _bootstrap()
         
     sys.exit(app.exec_())
 

@@ -1,6 +1,8 @@
 import os
 import sys
 
+_dll_directory_handles = []
+
 
 def _append_unique_sys_path(path):
     if path and os.path.isdir(path) and path not in sys.path:
@@ -27,7 +29,7 @@ def _safe_add_dll_directory(path):
         return
 
     try:
-        add_dll_directory(path)
+        _dll_directory_handles.append(add_dll_directory(path))
     except Exception:
         # Win7 may lack the underlying AddDllDirectory API even if Python
         # exposes os.add_dll_directory.

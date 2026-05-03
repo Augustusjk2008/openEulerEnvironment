@@ -8,6 +8,7 @@ def _set_meipass(monkeypatch, tmp_path):
     monkeypatch.setattr(compat.sys, "path", list(sys.path))
     monkeypatch.setattr(compat.sys, "_MEIPASS", str(tmp_path), raising=False)
     monkeypatch.setenv("PATH", r"C:\Windows\System32")
+    monkeypatch.setattr(compat, "_dll_directory_handles", [])
 
 
 def test_install_adds_pywin32_search_paths_without_add_dll_directory(monkeypatch, tmp_path):
@@ -41,6 +42,19 @@ def test_install_falls_back_to_path_when_add_dll_directory_raises(monkeypatch, t
     compat.install()
 
     assert compat.os.environ["PATH"].split(os.pathsep)[0] == str(dll_dir)
+
+
+def test_install_keeps_add_dll_directory_handle(monkeypatch, tmp_path):
+    dll_dir = tmp_path / "pywin32_system32"
+    dll_dir.mkdir()
+    _set_meipass(monkeypatch, tmp_path)
+    handle = object()
+
+    monkeypatch.setattr(compat.os, "add_dll_directory", lambda _path: handle)
+
+    compat.install()
+
+    assert compat._dll_directory_handles == [handle]
 
 
 def test_install_does_nothing_without_meipass(monkeypatch):

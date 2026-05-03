@@ -42,6 +42,10 @@ if "%~1"=="build" (
     call :clean_pyinstaller_artifacts
     echo Building executable...
     python -m PyInstaller -y "%PYI_SPEC%"
+    if errorlevel 1 (
+        echo [ERROR] Build failed.
+        exit /b 1
+    )
     goto :eof
 )
 
@@ -54,6 +58,10 @@ if "%~1"=="install" (
         exit /b 1
     )
     powershell -ExecutionPolicy Bypass -Command "if (Test-Path '%INSTALL_INTERNAL%') { Remove-Item -LiteralPath '%INSTALL_INTERNAL%' -Recurse -Force }; if (Test-Path '%INSTALL_EXE%') { Remove-Item -LiteralPath '%INSTALL_EXE%' -Force }; Copy-Item -Path '%BUILD_DIR%\\*' -Destination '%INSTALL_DIR%' -Recurse -Force"
+    if errorlevel 1 (
+        echo [ERROR] Install failed.
+        exit /b 1
+    )
     goto :eof
 )
 
@@ -62,6 +70,10 @@ if "%~1"=="pack" (
     if errorlevel 1 exit /b 1
     echo Packaging...
     powershell -ExecutionPolicy Bypass -File "%INSTALL_DIR%\back_and_pack.ps1"
+    if errorlevel 1 (
+        echo [ERROR] Packaging failed.
+        exit /b 1
+    )
     goto :eof
 )
 
@@ -79,8 +91,16 @@ if "%~1"=="all" (
     )
     echo [2/3] Installing application package...
     powershell -ExecutionPolicy Bypass -Command "if (Test-Path '%INSTALL_INTERNAL%') { Remove-Item -LiteralPath '%INSTALL_INTERNAL%' -Recurse -Force }; if (Test-Path '%INSTALL_EXE%') { Remove-Item -LiteralPath '%INSTALL_EXE%' -Force }; Copy-Item -Path '%BUILD_DIR%\\*' -Destination '%INSTALL_DIR%' -Recurse -Force"
+    if errorlevel 1 (
+        echo [ERROR] Install failed.
+        exit /b 1
+    )
     echo [3/3] Packaging...
     powershell -ExecutionPolicy Bypass -File "%INSTALL_DIR%\back_and_pack.ps1"
+    if errorlevel 1 (
+        echo [ERROR] Packaging failed.
+        exit /b 1
+    )
     echo Done.
     goto :eof
 )
